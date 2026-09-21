@@ -566,7 +566,11 @@ void command::set_params(sybase_query &query, const QoreListNode* args, Exceptio
         if (query.param_list[i] == 'd')
             continue;
 
-        QoreValue val = args ? args->retrieveEntry(i) : QoreValue();
+        // The bind arguments arrive as elements of the caller's list, and a member assigned
+        // with the weak reference operator ":=" or the opaque reference operator "@=" is
+        // stored as the reference rather than its target, so reading the list yields that.
+        // Resolve it before dispatching on the type below.
+        QoreValue val = args ? args->retrieveEntry(i).resolveIndirect() : QoreValue();
 
         CS_DATAFMT datafmt;
         memset(&datafmt, 0, sizeof(datafmt));
