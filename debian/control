@@ -1,0 +1,38 @@
+Source: qore-freetds-module
+Section: interpreters
+Priority: optional
+Maintainer: David Nichols <david@qore.org>
+Build-Depends: debhelper-compat (= 13),
+               cmake (>= 3.5),
+               libqore-dev (>= 3.0.0~),
+               qore (>= 3.0.0~),
+               freetds-dev
+Build-Depends-Indep: doxygen <!nodoc>
+Standards-Version: 4.7.4
+Rules-Requires-Root: no
+Homepage: https://qore.org
+Vcs-Git: https://github.com/qoretechnologies/module-sybase.git
+Vcs-Browser: https://github.com/qoretechnologies/module-sybase
+
+Package: qore-freetds-module
+Architecture: any
+Depends: ${qore:Depends},
+         ${shlibs:Depends},
+         ${misc:Depends}
+Suggests: qore-freetds-module-doc
+Description: FreeTDS database driver for Qore
+ This module connects Qore's DBI API to Microsoft SQL Server and Sybase
+ databases using the distribution FreeTDS CT-Library. It supports prepared
+ statements, transactions, large objects, cancellation and native bulk loading.
+ No database server or proprietary Sybase client is installed by this package.
+
+Package: qore-freetds-module-doc
+Section: doc
+Architecture: all
+Multi-Arch: foreign
+Build-Profiles: <!nodoc>
+Depends: ${misc:Depends}
+Suggests: qore-freetds-module
+Description: documentation and examples for Qore's FreeTDS driver
+ This package contains the HTML API reference and example tests for Qore's
+ FreeTDS database driver.

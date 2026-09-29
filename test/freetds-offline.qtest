@@ -1,0 +1,52 @@
+#!/usr/bin/env qore
+# Copyright (C) 2026 David Nichols
+# SPDX-License-Identifier: MIT
+
+%modern
+%prepend-module-path "${SCRIPT_DIR}/../build"
+%requires QUnit
+%requires freetds
+%exec-class FreeTdsOfflineTest
+
+#! Validate the driver without opening a network connection.
+class FreeTdsOfflineTest inherits QUnit::Test {
+    constructor() : Test("FreeTdsOfflineTest", "1.0", \ARGV) {
+        addTestCase("driver capabilities", \capabilities());
+        addTestCase("protocol validation before connection", \invalidProtocol());
+        addTestCase("missing username before connection", \missingUsername());
+        addTestCase("unopened connection cleanup", \cleanup());
+        set_return_value(main());
+    }
+
+    capabilities() {
+        Datasource db("freetds:offline@unused");
+        assertEq("freetds", db.getDriverName());
+        int caps = db.getCapabilities();
+        foreach int cap in (DBI_CAP_TRANSACTION_MANAGEMENT, DBI_CAP_BIND_BY_VALUE,
+                DBI_CAP_BIND_BY_PLACEHOLDER, DBI_CAP_LOB_SUPPORT,
+                DBI_CAP_HAS_BULK_LOAD, DBI_CAP_HAS_COLUMNAR_SELECT, DBI_CAP_HAS_EXECRAW) {
+            assertTrue((caps & cap) != 0);
+        }
+    }
+
+    invalidProtocol() {
+        Datasource db("freetds:offline@unused{tds-version=bogus}");
+        assertThrows("TDS-OPTION-ERROR", sub () { db.open(); });
+        assertFalse(db.inTransaction());
+        db.close();
+    }
+
+    missingUsername() {
+        Datasource db("freetds:@unused");
+        assertThrows("DATASOURCE-MISSING-USERNAME", sub () { db.open(); });
+        assertFalse(db.inTransaction());
+    }
+
+    cleanup() {
+        Datasource db("freetds:offline@unused");
+        assertFalse(db.inTransaction());
+        db.close();
+        db.close();
+        assertFalse(db.inTransaction());
+    }
+}

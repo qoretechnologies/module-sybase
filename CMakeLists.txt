@@ -75,10 +75,14 @@ return 0;
 }" HAVE_QORE_DATASOURCE_ACTIVE_TRANSACTION)
 
 check_cxx_source_compiles("
+#include <qore/Qore.h>
 #include <qore/DBI.h>
+static QoreValue execraw(Datasource*, const QoreString*, ExceptionSink*) {
+    return QoreValue();
+}
 int main(void){
 qore_dbi_method_list methods;
-methods.add(QDBI_METHOD_EXECRAW, nullptr);
+methods.add(QDBI_METHOD_EXECRAW, execraw);
 return 0;
 }" _QORE_HAS_DBI_EXECRAW)
 

@@ -1,0 +1,11 @@
+qore-freetds-module (1.4~git20260928.1+ds-0qore1~ubuntu26.04) resolute; urgency=medium
+
+  * Package the native FreeTDS driver, documentation and example tests.
+  * Use system CT-Library, distribution hardening and automatic debug symbols.
+  * Add offline runtime and compiler tests.
+    Document separate live database qualification.
+  * Support native, documentation-only and nodoc builds without network access.
+  * Exclude the unused legacy pthread macro without a license grant.
+  * Fix the raw-execution capability probe's headers and callback type.
+
+ -- David Nichols <david@qore.org>  Tue, 29 Sep 2026 07:04:09 +0000

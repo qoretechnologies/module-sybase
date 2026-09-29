@@ -39,3 +39,15 @@ docs/mainpage.dox
 docs/sybase/
 docs/qlib/Doxyfile.*
 docs/qlib/*.dox.h
+
+# Debian package build products
+/obj-*/
+/debian/.debhelper/
+/debian/debhelper-build-stamp
+/debian/files
+/debian/*.substvars
+/debian/*.debhelper.log
+/debian/qore-freetds-module/
+/debian/qore-freetds-module-doc/
+/debian/qore-freetds-module-dbgsym/
+/debian/tmp/

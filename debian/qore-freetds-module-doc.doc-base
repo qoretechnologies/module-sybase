@@ -1,0 +1,9 @@
+Document: qore-freetds-module
+Title: Qore FreeTDS Module Reference
+Author: Qore Technologies, s.r.o.
+Abstract: API reference for using FreeTDS databases through Qore DBI.
+Section: Programming
+
+Format: HTML
+Index: /usr/share/doc/qore-freetds-module-doc/html/index.html
+Files: /usr/share/doc/qore-freetds-module-doc/html/*.html

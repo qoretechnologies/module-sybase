@@ -1,0 +1,26 @@
+#!/bin/sh
+# Copyright (C) 2026 David Nichols
+# SPDX-License-Identifier: MIT
+set -eu
+unset QORE_MODULE_DIR QORE_MODULE_DIR_ONLY QORE_INCLUDE_DIR LD_LIBRARY_PATH LD_PRELOAD
+unset FREETDS FREETDSCONF TDSVER TDSDUMP TDSDUMPCONFIG
+cd "$AUTOPKGTEST_TMP"
+cat > freetds-smoke.q <<'EOF'
+%modern
+%requires freetds
+int sub main() {
+    Datasource db("freetds:offline@unused{tds-version=bogus}");
+    if (!(db.getCapabilities() & DBI_CAP_HAS_BULK_LOAD)) {
+        return 2;
+    }
+    try {
+        db.open();
+    } catch (hash<ExceptionInfo> ex) {
+        return ex.err == "TDS-OPTION-ERROR" ? 0 : 3;
+    }
+    return 1;
+}
+exit(main());
+EOF
+/usr/bin/qcc -o freetds-smoke freetds-smoke.q
+./freetds-smoke

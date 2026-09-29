@@ -1,0 +1,68 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: qore-freetds-module
+Upstream-Contact: David Nichols <david@qore.org>
+Source: https://github.com/qoretechnologies/module-sybase
+Files-Excluded: m4/acx_pthread.m4
+Comment: The obsolete pthread macro has no license grant and is unused by CMake.
+
+Files: *
+Copyright: 2003-2026 Qore Technologies, s.r.o.
+License: LGPL-2.1+ or MIT
+Comment: docs/mainpage.dox.tmpl offers a choice of LGPL 2.1 and MIT.
+ Individual source headers permit LGPL 2.1 or any later version.
+
+Files: m4/ax_cxx_compile_stdcxx.m4 m4/ax_cxx_compile_stdcxx_17.m4
+Copyright: 2008 Benjamin Kosnik
+           2012 Zack Weinberg
+           2013 Roy Stogner
+           2014-2015 Google Inc.
+           2015 Paul Norman
+           2015 Moritz Klammler
+           2016, 2018 Krzesimir Nowak
+           2019 Enji Cooper
+           2020 Jason Merrill
+           2021 Jörn Heusipp
+License: FSFAP
+
+Files: debian/*
+Copyright: 2026 David Nichols
+License: MIT
+
+License: LGPL-2.1+
+ This library is free software; you can redistribute it and/or modify it
+ under the terms of the GNU Lesser General Public License as published by
+ the Free Software Foundation; either version 2.1 of the License, or (at
+ your option) any later version.
+ .
+ This library is distributed in the hope that it will be useful, but
+ WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public
+ License for more details.
+ .
+ On Debian systems the complete license is available in
+ /usr/share/common-licenses/LGPL-2.1.
+
+License: MIT
+ Permission is hereby granted, free of charge, to any person obtaining a
+ copy of this software and associated documentation files (the "Software"),
+ to deal in the Software without restriction, including without limitation
+ the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ and/or sell copies of the Software, and to permit persons to whom the
+ Software is furnished to do so, subject to the following conditions:
+ .
+ The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ DEALINGS IN THE SOFTWARE.
+
+License: FSFAP
+ Copying and distribution of this file, with or without modification, are
+ permitted in any medium without royalty provided the copyright notice
+ and this notice are preserved. This file is offered as-is, without any
+ warranty.

@@ -1,0 +1,71 @@
+Debian/Ubuntu packaging for the FreeTDS driver
+============================================
+
+qore-freetds-module contains the native DBI driver. The optional
+qore-freetds-module-doc contains the shared Sybase/FreeTDS API reference and
+example tests. Debhelper produces matching debug symbols. This build uses the
+distribution freetds-dev CT-Library and explicitly disables the proprietary
+Sybase OCS target; it does not install a server or modify FreeTDS configuration.
+
+Build in an isolated native environment with the packaged Qore 3.0 runtime,
+libqore-dev and Build-Depends from debian/control. The current qualification
+target is Ubuntu 26.04 amd64. Other Debian/Ubuntu releases, architectures,
+Sybase OCS and Sybase ASE servers require separate qualification. Cross builds
+are rejected because Qore executes during configuration and testing.
+
+Source and build
+----------------
+
+The +ds orig tarball excludes only m4/acx_pthread.m4: this unused legacy
+Autoconf macro contains no license grant. Keep the licensed C++ macros and
+all source notices. CMake does not use Autoconf. From a clean checkout:
+
+    version=1.4~git20260928.1+ds
+    mkdir -p ../freetds-package-work
+    git archive --format=tar --prefix="qore-freetds-module-$version/" \
+        HEAD -- . ':!debian' ':!m4/acx_pthread.m4' | xz > \
+        "../freetds-package-work/qore-freetds-module_$version.orig.tar.xz"
+    tar -xf "../freetds-package-work/qore-freetds-module_$version.orig.tar.xz" \
+        -C ../freetds-package-work
+    cp -a debian "../freetds-package-work/qore-freetds-module-$version/"
+    cd "../freetds-package-work/qore-freetds-module-$version"
+    dpkg-buildpackage -S -us -uc
+
+Extract the .dsc into a fresh directory. With dependencies preinstalled, build
+as an unprivileged user with networking disabled:
+
+    dpkg-buildpackage -b -us -uc
+
+-B produces architecture packages without Doxygen; -A produces documentation.
+DEB_BUILD_PROFILES=nodoc omits documentation; DEB_BUILD_OPTIONS=nodoc omits the
+HTML. Distribution compiler and hardening flags are preserved. Native Qore
+modules resolve Qore symbols at load time without linking libqore. Rules derive
+the minimum runtime and libqore SONAME dependency from the installed SDK;
+dh_shlibdeps supplies the FreeTDS and other library dependencies. Runtime is
+not Multi-Arch: same because it requires the native Qore interpreter.
+
+Tests and release qualification
+-------------------------------
+
+The default build and installed runtime tests run freetds-offline.qtest: driver
+capabilities (including columnar results and BCP), invalid protocol and missing
+username validation before network I/O, and unopened connection cleanup.
+The installed compiler test builds and runs a fresh program away from the
+source tree. This DBI driver uses Qore's Datasource compiler metadata and has
+no user qmods or dependency trailers; ordinary dh_strip is appropriate.
+
+The other test/*.qtest suites need a disposable live database. They create and
+drop tables/procedures and must never run against production data. Set
+QORE_DB_CONNSTR_FREETDS to a dedicated test database connection string, e.g.
+'freetds:USER/PASSWORD@DATABASE%HOST:PORT', and explicitly preload the newly
+built driver when running each suite. Some older tests have local developer
+defaults: always supply this variable for qualification. No credentials are
+shipped. Build tests do not download or start a proprietary SQL Server image;
+perform live integration separately, retaining server/client versions and logs.
+Microsoft SQL Server qualification does not qualify Sybase ASE or OCS.
+
+Check source/binary Lintian, hardening and detached debug symbols, installation
+without the SDK, documentation/debug coinstallation, dpkg -V, purge/reinstall,
+and reproducibility from different paths and parallelism. Record exact source
+commit and source/package hashes. Each changed upload needs a fresh version.
+Testing PPA publication is separate from final general-release approval.

@@ -1,0 +1,7 @@
+Tests: runtime
+Depends: qore-freetds-module
+Restrictions: allow-stderr
+
+Tests: compiler
+Depends: qore-freetds-module, libqore-dev
+Restrictions: allow-stderr
