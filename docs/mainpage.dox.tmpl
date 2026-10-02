@@ -1,5 +1,7 @@
 /** @mainpage Qore sybase Module
 
+    Copyright 2026 Qore Technologies, s.r.o.
+
     @tableofcontents
 
     @section sybaseintro Introduction to the sybase and freetds Modules
@@ -125,7 +127,7 @@ Sybase Client-Library/15.0/P-EBF13571 ESD #4/DRV.15.0.1/Linux x86_64/Linux 2.4.2
     - \c "timezone": accepts a string argument that can be either a region name (ex: \c "Europe/Prague") or a UTC
       offset (ex: \c "+01:00") to set the server's time zone rules; this is useful if connecting to a database server
       in a different time zone.  If this option is not set then the server's time zone is assumed to be the same as
-      the client's time zone; see @ref timezone.
+      the client's time zone; see @ref sybase_timezone.
     - \c "optimized-date-binds": when set, date/time values are bound with full resolution including microseconds,
       however this will cause any operations with date/time values with microseconds bound for \c DATETIME columns to
       fail; if this is not set, then date/time values are bound with an approach that works for all columns but gives

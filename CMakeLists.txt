@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.5...3.29)
+# Copyright (C) 2026 Qore Technologies, s.r.o.
 
 project(qore-sybase-modules VERSION 1.4)
 
@@ -196,6 +197,9 @@ set(CPP_SRC
 set(QORE_DOX_TMPL_SRC
     docs/mainpage.dox.tmpl
 )
+
+# Resolve the documented native bulk-load API from the installed Qore SDK.
+list(APPEND QORE_DOXYGEN_MODULES BulkSqlUtil)
 
 # Build FreeTDS module
 if(WITH_FREETDS)
