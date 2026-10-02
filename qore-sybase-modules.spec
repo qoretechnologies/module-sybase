@@ -1,164 +1,94 @@
-%define with_sybase %(test -z "$SYBASE"; echo $?)
-
-%define module_api %(qore --latest-module-api 2>/dev/null)
-%define module_dir %{_libdir}/qore-modules
-
-%if 0%{?sles_version}
-
-%define dist .sles%{?sles_version}
-
+# Copyright (C) 2026 Qore Technologies, s.r.o.
+# SPDX-License-Identifier: MIT
+%global source_date_epoch_from_changelog 1
+%global use_source_date_epoch_as_buildtime 1
+%if v"%{rpmversion}" >= v"4.20"
+%global build_mtime_policy clamp_to_source_date_epoch
 %else
-%if 0%{?suse_version}
-
-# get *suse release major version
-%define os_maj %(echo %suse_version|rev|cut -b3-|rev)
-# get *suse release minor version without trailing zeros
-%define os_min %(echo %suse_version|rev|cut -b-2|rev|sed s/0*$//)
-
-%if %suse_version > 1010
-%define dist .opensuse%{os_maj}_%{os_min}
-%else
-%define dist .suse%{os_maj}_%{os_min}
+%global clamp_mtime_to_source_date_epoch 1
 %endif
-
-%endif
-%endif
-
-# see if we can determine the distribution type
-%if 0%{!?dist:1}
-%define rh_dist %(if [ -f /etc/redhat-release ];then cat /etc/redhat-release|sed "s/[^0-9.]*//"|cut -f1 -d.;fi)
-%if 0%{?rh_dist}
-%define dist .rhel%{rh_dist}
-%else
-%define dist .unknown
-%endif
-%endif
-
-Summary: Sybase and FreeTDS Modules for Qore
-Name: qore-sybase-modules
+%bcond_without tests
+%bcond_without docs
+Name: qore-freetds-module
 Version: 1.4
-Release: 1%{dist}
-License: LGPL
-Group: Development/Languages
-URL: http://www.qoretechnologies.com/qore
-Source: https://github.com/qoretechnologies/%{name}/releases/download/release-%{version}/%{name}-%{version}.tar.bz2
-#Source0: %{name}-%{version}.tar.gz
-BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root
-Requires: /usr/bin/env
-Requires: qore-module(abi)%{?_isa} = %{module_api}
+Release: 2%{?dist}
+Summary: FreeTDS database driver for Qore
+License: MIT OR LGPL-2.1-or-later
+URL: https://github.com/qoretechnologies/module-sybase
+Source0: %{name}-%{version}.tar.xz
+BuildRequires: cmake >= 3.5
+BuildRequires: make
 BuildRequires: gcc-c++
-BuildRequires: qore-devel >= 0.9
-BuildRequires: qore
+BuildRequires: freetds-devel
+BuildRequires: qore-devel >= 3.0.0~
+BuildRequires: qore-rpm-macros >= 3.0.0~
+%if %{with docs}
+BuildRequires: doxygen
+%if 0%{?suse_version}
+BuildRequires: util-linux
+%else
+BuildRequires: util-linux-core
+%endif
+%endif
 
 %description
-This is the master module for the sybase and freetds modules; it does not
-contain any files.
+Qore DBI driver for Microsoft SQL Server and Sybase databases using the
+system FreeTDS CT-Library. Supports transactions, prepared statements,
+large objects, cancellation and native bulk loading. A database server
+and the proprietary Sybase OCS client are not installed by this package.
 
-
-%if 0%{?suse_version}
-%debug_package
+%if %{with docs}
+%package doc
+Summary: Reference documentation for Qore's FreeTDS database driver
+BuildArch: noarch
+%description doc
+API reference and connection examples for Qore's FreeTDS database driver.
 %endif
-
-%if 0%{?with_sybase}
-%package -n qore-sybase-module
-Summary: Sybase DBI module for Qore
-Group: Development/Languages
-
-%description -n qore-sybase-module
-Sybase DBI driver module for the Qore Programming Language. The Sybase driver is
-character set aware, supports multithreading, transaction management, stored
-prodedure and function execution, and SQL execution with native binding and
-output placeholders.
-
-
-%files -n qore-sybase-module
-%defattr(-,root,root,-)
-%dir %{module_dir}
-%{module_dir}/sybase-api-%{module_api}.qmod
-%doc COPYING.MIT COPYING.LGPL README RELEASE-NOTES AUTHORS test/sybase-statement.qtest test/sybase-types.qtest docs/sybase/html
-%endif
-
-
-%package -n qore-freetds-module
-Summary: FreeTDS-based MS-SQL and Sybase DBI module for Qore
-Group: Development/Languages
-%if 0%{?mdkversion}
-%ifarch x86_64 ppc64 s390x
-BuildRequires: lib64freetds-devel
-%else
-BuildRequires: libfreetds-devel
-%endif
-%else
-BuildRequires: freetds-devel
-%endif
-
-%description -n qore-freetds-module
-FreeTDS-based MS-SQL Server and Sybase DBI driver module for the Qore
-Programming Language. This driver is character set aware, supports
-multithreading, transaction management, stored prodedure and function
-execution, SQL execution with native binding and output placeholders,
-and can be used to connect to Sybase and Microsoft SQL Server
-databases.
-
-
-%files -n qore-freetds-module
-%defattr(-,root,root,-)
-%dir %{module_dir}
-%{module_dir}/freetds-api-%{module_api}.qmod
-%doc COPYING.MIT COPYING.LGPL README RELEASE-NOTES ChangeLog AUTHORS test/freetds-native-bulk-load.qtest test/sybase-statement.qtest test/sybase-types.qtest docs/sybase/html
 
 %prep
-%setup -q
-CXXFLAGS="$RPM_OPT_FLAGS" ./configure --prefix=/usr --disable-debug
-
+%autosetup
 %build
-%{__make}
-
+%{?set_build_flags}
+. %{_rpmconfigdir}/qore/module-env.sh
+unset FreeTDS_INCLUDE_DIR FreeTDS_LIBS FREETDS FREETDSCONF TDSVER TDSDUMP TDSDUMPCONFIG SYBASE SYBASE_OCS
+qore_set_source_prefix_maps "%{qore_debug_source_dir}"
+cmake -S . -B build -G 'Unix Makefiles' \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS_RELEASE=-DNDEBUG \
+  -DCMAKE_INSTALL_PREFIX=%{_prefix} \
+  -DCMAKE_SKIP_RPATH=ON -DCMAKE_IGNORE_PREFIX_PATH=/usr/local \
+  -DQore_DIR=%{_libdir}/cmake/Qore -DQORE_EXECUTABLE=/usr/bin/qore \
+  -DQORE_QPP_EXECUTABLE=/usr/bin/qpp \
+  -DWITH_FREETDS=ON -DWITH_SYBASE=OFF -DQORE_GENERATE_JAVA_BINDINGS=OFF \
+  -DCMAKE_DISABLE_FIND_PACKAGE_Doxygen=%{!?with_docs:ON}%{?with_docs:OFF}
+cmake --build build -- %{?_smp_mflags}
+%if %{with docs}
+printf '\nWARN_AS_ERROR = FAIL_ON_WARNINGS\n' >> build/Doxyfile
+cmake --build build --target docs -- %{?_smp_mflags}
+%endif
 %install
-mkdir -p $RPM_BUILD_ROOT/%{module_dir}
-mkdir -p $RPM_BUILD_ROOT/usr/share/doc/qore-sybase-module
-make install DESTDIR=$RPM_BUILD_ROOT
-
-%clean
-rm -rf $RPM_BUILD_ROOT
-
+DESTDIR=%{buildroot} cmake --install build
+chmod 755 %{buildroot}%{_libdir}/qore-modules/freetds-api-*.qmod
+%if %{with docs}
+install -d %{buildroot}%{_docdir}/%{name}-doc
+cp -a build/docs/freetds/html %{buildroot}%{_docdir}/%{name}-doc/
+hardlink -t -O %{buildroot}%{_docdir}/%{name}-doc
+%endif
+%check
+%if %{with tests}
+. %{_rpmconfigdir}/qore/module-env.sh
+/usr/bin/python3 -B -W error rpm/test_fixture.py -v
+/usr/bin/python3 -B -W error rpm/run-tests.py --build-dir "$PWD/build"
+%endif
+%files
+%license COPYING.MIT COPYING.LGPL
+%doc README RELEASE-NOTES AUTHORS
+%{_libdir}/qore-modules/freetds-api-*.qmod
+%if %{with docs}
+%files doc
+%license COPYING.MIT COPYING.LGPL
+%doc %{_docdir}/%{name}-doc/
+%endif
 %changelog
-* Sat Aug 08 2026 David Nichols <david@qore.org> 1.4
-- added opt-in native Microsoft SQL Server BCP loading through FreeTDS
-- added bounded mutation-stream reporting and transactional abort cleanup for native loading
-- refs https://github.com/qoretechnologies/qore/issues/5389
-
-* Thu Jan 02 2026 David Nichols <david@qore.org> 1.3
-- added direct connection support (hostname:port without freetds.conf)
-- added CMake build system as alternative to autotools
-- fixed potential buffer overrun in SQL parsing
-- fixed SQL quote parsing for escaped single quotes
-- fixed format string error in error message
-- added C++17 [[fallthrough]] annotation
-- removed dead code in query parser
-- updated to C++17 std::unique_ptr in tests
-- refs https://github.com/qoretechnologies/qore/issues/5103
-
-* Sat May 13 2023 David Nichols <david@qore.org> 1.2
-- updated version to 1.2
-
-* Wed Jan 19 2022 David Nichols <david@qore.org> 1.1
-- updated version to 1.1
-
-* Tue Jul 25 2017 David Nichols <david@qore.org> 1.0.4.2
-- updated version to 1.0.4.2
-
-* Tue Sep 13 2016 David Nichols <david@qore.org> 1.0.4.1
-- updated version to 1.0.4.1
-
-* Sat Aug 29 2015 David Nichols <david@qore.org>
-- updated version to 1.0.4
-
-* Thu Jun 25 2009 David Nichols <david_nichols@users.sourceforge.net>
-- updated version to 1.0.3
-
-* Sat Jan 3 2009 David Nichols <david_nichols@users.sourceforge.net>
-- updated version to 1.0.2
-
-* Tue Sep 2 2008 David Nichols <david_nichols@users.sourceforge.net>
-- initial spec file for separate sybase and freetds module release
+* Fri Oct 02 2026 David Nichols <david@qore.org> - 1.4-2
+- Build the FreeTDS driver with the packaged Qore SDK and distribution client.
+- Run isolated offline driver checks and package strict reference documentation.

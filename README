@@ -61,3 +61,10 @@ BUILD FROM GIT
 ./configure
 make
 sudo make install
+
+RPM PACKAGES
+------------
+
+qore-sybase-modules.spec builds the public FreeTDS driver and reference
+package with the distribution client library. See rpm/README.rst for source
+preparation, installed checks and separate database/Sybase OCS qualification.
