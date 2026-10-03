@@ -118,39 +118,19 @@ Sybase Client-Library/15.0/P-EBF13571 ESD #4/DRV.15.0.1/Linux x86_64/Linux 2.4.2
         multiple result sets are returned, then the \c query key will be a hash with \c query# keys giving the \
         results for each query in order.
 
-    @section sybaseoptions sybase and freetds Driver Options
+    @section sybasedocumentation Documentation
 
-    @subpage sybaseoptionsguide
-
-
-    @section freetds_native_bulk_load Native Microsoft SQL Server Bulk Loading
-
-    @subpage sybasefreetds_native_bulk_loadguide
-
+    - @anchor sybaseoptions @subpage sybaseoptionsguide
+    - @anchor freetds_native_bulk_load @subpage sybasefreetds_native_bulk_loadguide
+    - @anchor sybase_timezone @subpage sybase_timezoneguide
+    - @anchor sybasebind @subpage sybasebindguide
+    - @anchor sybasestoredprocs @subpage sybasestoredprocsguide
+    - @anchor sybasereleasenotes @subpage sybasereleasenotesguide
 
     @section sybasetrans Transaction Management
 
     Transaction management is supported by enabling chained transaction mode on each connection. In autocommit mode in the @ref Qore::SQL::Datasource class, Qore executes a commit after every request to the server.
 
     The transaction isolation level is left at the default, 1, \c "read committed", which is the default for all Qore drivers as well.
-
-    @section sybase_timezone Time Zone Support
-
-    @subpage sybase_timezoneguide
-
-
-    @section sybasebind Binding and Types
-
-    @subpage sybasebindguide
-
-
-    @section sybasestoredprocs Stored Procedures
-
-    @subpage sybasestoredprocsguide
-
-
-    @section sybasereleasenotes Release Notes
-
-    @subpage sybasereleasenotesguide
 
 */
