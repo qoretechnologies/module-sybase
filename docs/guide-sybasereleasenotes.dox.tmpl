@@ -8,7 +8,7 @@
 
     <b>New Features</b>
     - added opt-in native Microsoft SQL Server BCP loading to the \c freetds driver; see
-      @ref freetds_native_bulk_load
+      @ref sybasefreetds_native_bulk_loadguide
     - added driver-owned bounded mutation-stream reporting with exact serialized-payload byte accounting for native
       BCP loads
 
@@ -103,7 +103,7 @@
       - \c "optimal-numbers": return \c NUMERIC or \c DECIMAL types as an integer if possible, if not as an arbitrary-precision number
       - \c "string-numbers": return \c NUMERIC or \c DECIMAL types as strings (for backwards-compatibility)
       - \c "numeric-numbers": return \c NUMERIC or \c DECIMAL types as arbitrary-precision number values
-      - \c "timezone": accepts a string argument that can be either a region name (ex: \c "Europe/Prague") or a UTC offset (ex: \c "+01:00") to set the server's time zone rules; this is useful if connecting to a database server in a different time zone.  If this option is not set then the server's time zone is assumed to be the same as the client's time zone; see @ref sybase_timezone.
+      - \c "timezone": accepts a string argument that can be either a region name (ex: \c "Europe/Prague") or a UTC offset (ex: \c "+01:00") to set the server's time zone rules; this is useful if connecting to a database server in a different time zone.  If this option is not set then the server's time zone is assumed to be the same as the client's time zone; see @ref sybase_timezoneguide.
     - fixed auto-reconnect functionality (<a href="https://github.com/qorelanguage/qore/issues/131">issue 131</a>)
     - removed trailing colon from error messages (<a href="https://github.com/qorelanguage/qore/issues/312">issue 312</a>)
     - fixed returning decimal values; they were returned with too-high precision numbers which caused comparisons with the original number to fail (<a href="https://github.com/qorelanguage/qore/issues/512">issue 512</a>))
