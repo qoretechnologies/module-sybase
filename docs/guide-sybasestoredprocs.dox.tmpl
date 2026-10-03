@@ -1,0 +1,35 @@
+/* Copyright (C) 2026 Qore Technologies, s.r.o. */
+
+/** @page sybasestoredprocsguide Stored Procedures
+
+    @tableofcontents
+
+    Stored procedure execution is supported, the following is an example of a stored procedure call with output parameters:
+    @verbatim
+create procedure get_values @string varchar(80) output, @int int output
+as
+select @string = 'hello there'
+select @int = 150
+commit -- to maintain transaction count
+    @endverbatim
+
+    Qore code to call this procedure:
+    @code{.py}
+# note that if the output parameters are declared as @string and @int, the driver cannot
+# return the parameter result hash with key names corresponding to the param names.
+# ":string" and ":int" is qore placeholder syntax, consistent with other Qore DBI
+# driver placeholder syntax
+
+hash result = db.exec("declare @string varchar(40), @int int
+exec get_values :string output, :int output");
+    @endcode
+
+    @note FreeTDS Limitations\n
+    The \c freetds driver is not able to retrieve output parameter values when executing queries on MS SQL Server 2000
+    or above (tds version 5.0 or above), due to the fact that newer MS SQL Server dataservers no longer return output
+    parameter information through the TDS protocol as with Sybase and previous versions of SQL Server.  A future
+    version of this driver should offer an alternative Datasource method allowing explicit stored procedure execution
+    through ct-lib RPC functions, which will allow output parameters to be returned.\n\n
+    There are other issues with data types, character encoding, and more when using this driver; please see
+    http://www.freetds.org for more information
+*/

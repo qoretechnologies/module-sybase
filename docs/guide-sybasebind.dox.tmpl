@@ -1,0 +1,64 @@
+/* Copyright (C) 2026 Qore Technologies, s.r.o. */
+
+/** @page sybasebindguide Binding and Types
+
+    @tableofcontents
+
+    Note that binding by placeholder is not required or supported by this driver as values are returned directly; Qore DBI placeholder buffer specifications are ignored when the \c sybase and \c freetds drivers are used.
+
+    When retrieving data, data types are converted to Qore types as per @ref sybase_to_qore.
+
+    @section sybase_and_freetds_binding_by_value Binding by Value
+
+    \c DATETIME and \c TIME data types have a resolution of 1/300th of a second. Qore uses floating-point operations to convert to or from microseconds when binding and retrieving data and rounds to the nearest integer to minimize conversion errors.
+
+    @subsection sybase_binding_by_value Binding by Value with the sybase Driver
+
+    The following table gives data mapping when binding qore types by value with the \c sybase driver.
+
+    |!QoreType|!sybase Type|!Description
+    |\c Type::Int|\c CS_BIGINT_TYPE|Sybase's integer type is only 32 bits, integers greater than 2147483647 bound to an \c INT column will only have their lower 32 bits saved to Sybase.
+    |\c Type::Float|\c CS_FLOAT_TYPE|direct conversion
+    |\c Type::Boolean|\c CS_BIT_TYPE|True = 1, False = 0
+    |\c Type::String|\c CS_CHAR_TYPE|direct conversion
+    |\c Type::Date|\c CS_DATETIME_TYPE|milliseconds are rounded to 1/300 second values
+    |\c Type::Binary|\c CS_BINARY_TYPE|direct conversion
+
+    @subsection freetds_binding_by_value Binding by Value with the freetds Driver
+
+    The following table gives data mapping when binding qore types by value with the \c freetds driver.
+
+    |!QoreType|!freetds Type|!Description
+    |\c Type::Int|\c CS_BIGINT_TYPE, \c CS_INT_TYPE or \c CS_FLOAT_TYPE|Integer type is only 32-bits, integers greater than 2147483647 bound to an \c INT column will only have their lower 32 bits saved to the database.  If the ~FreeTDS version used to compile this driver does not support \c CS_BIGINT_TYPE, then integers 32 bits or smaller will be bound as \c CS_INT_TYPE, and larger integers will be bound as \c CS_FLOAT_TYPE.
+    |\c Type::Float|\c CS_FLOAT_TYPE|direct conversion
+    |\c Type::Boolean|\c CS_BIT_TYPE|True = 1, False = 0
+    |\c Type::String|\c CS_CHAR_TYPE|direct conversion
+    |\c Type::Date|\c CS_DATETIME_TYPE|milliseconds are rounded to 1/300 second values
+    |\c Type::Binary|\c CS_BINARY_TYPE|direct conversion
+
+    @section sybase_to_qore Database to Qore Type Mappings
+    |!Data Type|!Qore Type|!Driver|!Notes
+    |\c TINYINT|@ref Qore::Type::Int|both|direct conversion
+    |\c SMALLINT|@ref Qore::Type::Int|both|direct conversion
+    |\c INT|@ref Qore::Type::Int|both|direct conversion
+    |\c BIGINT|@ref Qore::Type::Int|both|direct conversion
+    |\c DECIMAL, NUMERIC|depends on options|both|see @ref sybase_number_options
+    |\c FLOAT|@ref Qore::Type::Float|both|direct conversion
+    |\c REAL|@ref Qore::Type::Float|both|direct conversion
+    |\c MONEY|@ref Qore::Type::Float|both|direct conversion
+    |\c SMALLMONEY|@ref Qore::Type::Float|both|direct conversion
+    |\c DATETIME|@ref Qore::Type::Date|both|1/300 second values are converted and rounded to the nearest microsecond
+    |\c SMALLDATETIME|@ref Qore::Type::Date|both|direct conversion
+    |\c DATE|@ref Qore::Type::Date|both|direct conversion
+    |\c TIME|@ref Qore::Type::Date|sybase|Date portion is set to '1970-01-01'; 1/300 second values are converted and rounded to the nearest microsecond
+    |\c TIME|@ref Qore::Type::Date|freetds|currently returned as a string with MS SQL Server DBs
+    |\c CHAR|@ref Qore::Type::String|both|trailing blanks are removed
+    |\c VARCHAR|@ref Qore::Type::String|both|direct conversion
+    |\c UNICHAR|@ref Qore::Type::String|sybase|trailing blanks are removed
+    |\c UNIVARCHAR|@ref Qore::Type::String|sybase|trailing blanks are removed
+    |\c TEXT|@ref Qore::Type::String|both|direct conversion
+    |\c UNITEXT|@ref Qore::Type::Binary|both|this data is returned as type \c IMAGE from the dataserver, so a binary object is returned by the driver
+    |\c BINARY|@ref Qore::Type::Binary|both|direct conversion
+    |\c VARBINARY|@ref Qore::Type::Binary|both|direct conversion
+    |\c IMAGE|@ref Qore::Type::Binary|both|direct conversion
+*/

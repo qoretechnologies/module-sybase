@@ -1,0 +1,73 @@
+/* Copyright (C) 2026 Qore Technologies, s.r.o. */
+
+/** @page sybaseoptionsguide sybase and freetds Driver Options
+
+    @tableofcontents
+
+    The \c sybase and \c freetds drivers support the following DBI options:
+    - \c "optimal-numbers": return numeric types as an integer if possible, if not as an arbitrary-precision number
+    - \c "string-numbers": return numeric types as strings (for backwards-compatibility)
+    - \c "numeric-numbers": return numeric types as arbitrary-precision number values
+    - \c "timezone": accepts a string argument that can be either a region name (ex: \c "Europe/Prague") or a UTC
+      offset (ex: \c "+01:00") to set the server's time zone rules; this is useful if connecting to a database server
+      in a different time zone.  If this option is not set then the server's time zone is assumed to be the same as
+      the client's time zone; see @ref sybase_timezone.
+    - \c "optimized-date-binds": when set, date/time values are bound with full resolution including microseconds,
+      however this will cause any operations with date/time values with microseconds bound for \c DATETIME columns to
+      fail; if this is not set, then date/time values are bound with an approach that works for all columns but gives
+      a maximum of 1/300 second resolution
+    - \c "tds-version": (\c freetds driver only) sets the TDS protocol version used for the connection; this allows
+      ad-hoc connections to be made without requiring a \c freetds.conf entry for the server; see
+      @ref sybase_tds_version_option
+
+    Options can be set in the @ref Qore::SQL::Datasource or @ref Qore::SQL::DatasourcePool constructors as in the
+    following examples:
+    @code{.py}
+Dataource ds("sybase:user/pass@db{numeric-numbers,timezone=Europe/Vienna}");
+DataourcePool dsp("freetds:user/pass@db%host.internal:1433{optimal-numbers}");
+    @endcode
+
+    Options are stored separately for each connection.
+
+    @section sybase_number_options Number Options
+
+    The number options (\c "optimal-numbers", \c "string-numbers", and \c "numeric-numbers") are all
+    mutually-exclusive; setting one automatically disables the others.   These options also ignore their arguments;
+    the last one set takes effect (also note that setting it with any value sets the option, even @ref False).
+
+    The default if no other option is explicitly set is \c "optimal-numbers".  Note that this represents a change
+    from previous versions where \c NUMERIC or \c DECIMAL values were returned as strings in order to avoid the loss
+    of information.  To set the old behavior, set the \c "string-numbers" option when creating the \c Datasource or
+    \c DatasourcePool object.
+
+    \c NUMERIC or \c DECIMAL output values:
+    - \c "optimal-numbers": return numeric values as an integer if possible, if not as an arbitrary-precision number
+    - \c "string-numbers": return numeric values as strings (for backwards-compatibility)
+    - \c "numeric-numbers": return numeric values as arbitrary-precision number values
+
+    @section sybase_tds_version_option TDS Protocol Version Option
+
+    The \c "tds-version" option (\c freetds driver only) sets the TDS protocol version used for the connection
+    before connecting.  This makes it possible to establish ad-hoc connections without requiring a \c freetds.conf
+    entry for the server (otherwise FreeTDS uses its compile-time default protocol version, which is frequently
+    incompatible with the target server).
+
+    The value must be a string; one of the following:
+    - \c "auto": negotiate the protocol version automatically
+    - \c "4.0", \c "4.2", \c "4.6", \c "4.9.5": legacy Sybase / TDS versions
+    - \c "5.0": use for Sybase Adaptive Server Enterprise (ASE)
+    - \c "7.0", \c "7.1", \c "7.2", \c "7.3", \c "7.4": use for Microsoft SQL Server (\c "7.4" is recommended
+      for recent versions of MS SQL Server)
+
+    If this option is not set, the FreeTDS default or the \c freetds.conf configuration is used.  Setting the
+    option after the connection is established takes effect on the next connection.  An invalid value raises a
+    \c TDS-OPTION-ERROR exception before any connection attempt is made.
+
+    @code{.py}
+# ad-hoc direct connection to MS SQL Server without a freetds.conf entry
+Datasource ds("freetds:user/pass@db%host.internal:1433{tds-version=7.4}");
+    @endcode
+
+    This option was added to address
+    <a href="https://github.com/qoretechnologies/qore/issues/4321">issue 4321</a>.
+*/

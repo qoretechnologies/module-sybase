@@ -196,6 +196,12 @@ set(CPP_SRC
 
 set(QORE_DOX_TMPL_SRC
     docs/mainpage.dox.tmpl
+    docs/guide-freetds_native_bulk_load.dox.tmpl
+    docs/guide-sybase_timezone.dox.tmpl
+    docs/guide-sybasebind.dox.tmpl
+    docs/guide-sybaseoptions.dox.tmpl
+    docs/guide-sybasereleasenotes.dox.tmpl
+    docs/guide-sybasestoredprocs.dox.tmpl
 )
 
 # Resolve the documented native bulk-load API from the installed Qore SDK.

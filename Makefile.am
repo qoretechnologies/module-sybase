@@ -33,6 +33,7 @@ if COND_DOXYGEN
 DOX = sybase
 DOXYGEN_OUTPUT = docs/sybase/html
 DOXYFILES = docs/doxyfile docs/mainpage.dox
+DOXYFILES += docs/guide-sybasereleasenotes.dox docs/guide-sybasestoredprocs.dox docs/guide-sybasebind.dox docs/guide-sybase_timezone.dox docs/guide-freetds_native_bulk_load.dox docs/guide-sybaseoptions.dox
 DOXYFILES_SRC = docs/doxyfile.tmpl docs/footer_template.html
 QDX = qdx
 DX_CLEANFILES = ${DOXYFILES}
@@ -47,6 +48,25 @@ docs/mainpage.dox: docs/mainpage.dox.tmpl
 
 docs/doxyfile: docs/doxyfile.tmpl
 	sed -e s/__VERSION__/${VERSION}/ -e s:__USERMODDIR__:${usermoddir}: $< > $@
+
+docs/guide-sybasereleasenotes.dox: docs/guide-sybasereleasenotes.dox.tmpl
+	$(QDX) -d $< $@
+
+docs/guide-sybasestoredprocs.dox: docs/guide-sybasestoredprocs.dox.tmpl
+	$(QDX) -d $< $@
+
+docs/guide-sybasebind.dox: docs/guide-sybasebind.dox.tmpl
+	$(QDX) -d $< $@
+
+docs/guide-sybase_timezone.dox: docs/guide-sybase_timezone.dox.tmpl
+	$(QDX) -d $< $@
+
+docs/guide-freetds_native_bulk_load.dox: docs/guide-freetds_native_bulk_load.dox.tmpl
+	$(QDX) -d $< $@
+
+docs/guide-sybaseoptions.dox: docs/guide-sybaseoptions.dox.tmpl
+	$(QDX) -d $< $@
+
 
 doxygen-doc: $(DOXYGEN_OUTPUT)
 
@@ -76,3 +96,11 @@ endif
 
 libtool: $(LIBTOOL_DEPS)
 	$(SHELL) ./config.status --recheck
+
+# Documentation guide sources shipped with the module.
+EXTRA_DIST += docs/guide-sybasereleasenotes.dox.tmpl \
+	docs/guide-sybasestoredprocs.dox.tmpl \
+	docs/guide-sybasebind.dox.tmpl \
+	docs/guide-sybase_timezone.dox.tmpl \
+	docs/guide-freetds_native_bulk_load.dox.tmpl \
+	docs/guide-sybaseoptions.dox.tmpl

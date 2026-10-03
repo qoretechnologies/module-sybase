@@ -1,0 +1,78 @@
+/* Copyright (C) 2026 Qore Technologies, s.r.o. */
+
+/** @page sybasefreetds_native_bulk_loadguide Native Microsoft SQL Server Bulk Loading
+
+    @tableofcontents
+
+    Version 1.4 adds an opt-in native bulk-load path to the \c freetds driver for Microsoft SQL Server.  It uses the
+    FreeTDS CT-Library BCP API on the connection already owned by the datasource.  The \c sybase driver and FreeTDS
+    connections to Sybase servers do not advertise this capability.  The capability is also omitted when the module
+    is compiled with a %Qore or FreeTDS version that does not provide the required APIs.
+
+    Use @ref BulkSqlUtil::BulkInsertOperation with \c "bulk_load" set to @ref True "True" to require native loading,
+    or to \c "auto" to use it when eligible and otherwise retain the ordinary insert path.  The default is
+    @ref False "False".  The native path is insert-only and is not eligible for returning values, row callbacks,
+    SQL value expressions, or upserts.
+
+    @code{.py}
+BulkSqlUtil::BulkInsertOperation op(table, {
+    "bulk_load": True,
+    "block_size": 1000,
+});
+on_error op.discard();
+op.queueData({"id": 1, "description": "first"});
+op.flush();
+op.endStream();
+    @endcode
+
+    The implementation keeps one BCP exchange open while Qore pushes buffered blocks to the driver.  It deliberately
+    does not use FreeTDS's per-batch completion operation, because that operation commits each completed batch on
+    Microsoft SQL Server and would break caller-transaction atomicity.
+
+    @section freetds_native_bulk_eligibility Eligibility and Type Mapping
+
+    Table and column names must be unquoted simple identifiers; a table can optionally be qualified with one schema.
+    Because FreeTDS does not implement default-column binding for this API, every insertable table column must be
+    present.  Identity, computed, generated, \c TIMESTAMP, and \c ROWVERSION columns are excluded from that set.  If a
+    table has defaults or another omitted insertable column, \c "auto" falls back and \c True reports that native
+    loading is unavailable.
+
+    The following destination families are eligible.  Null values are accepted only for nullable columns.
+
+    |!Microsoft SQL Server destination|!Accepted Qore value
+    |\c CHAR, \c VARCHAR, \c TEXT|@ref Qore::Type::String
+    |\c NCHAR, \c NVARCHAR, \c NTEXT|@ref Qore::Type::String
+    |\c BINARY, \c VARBINARY, \c IMAGE|@ref Qore::Type::Binary
+    |\c TINYINT, \c SMALLINT, \c INT, \c BIGINT|@ref Qore::Type::Int
+    |\c DECIMAL, \c NUMERIC, \c MONEY, \c SMALLMONEY|@ref Qore::Type::Int or @ref Qore::Type::Number
+    |\c FLOAT, \c REAL|@ref Qore::Type::Int, @ref Qore::Type::Float, or @ref Qore::Type::Number
+    |\c BIT|@ref Qore::Type::Boolean
+    |\c DATE, \c TIME, \c DATETIME, \c DATETIME2, \c SMALLDATETIME|absolute @ref Qore::Type::Date
+
+    Other destination or Qore types cause automatic fallback during eligibility checks or a native-load exception
+    before the invalid row is sent.  Non-finite floating-point values and relative dates are rejected.
+
+    @section freetds_native_bulk_transactions Transaction and Error Semantics
+
+    Native loading starts a server transaction if the datasource has not yet caused one to begin, then creates a
+    savepoint.  A successful native end closes BCP but does not commit; the caller remains responsible for committing
+    or rolling back.  An unsuccessful end first closes the BCP protocol, then rolls back to the savepoint, preserving
+    work performed by the caller before the native load.  Calling commit or rollback while BCP is active is rejected;
+    finish or discard the bulk operation first.  Destruction and connection cleanup provide an emergency abort.
+
+    Native BCP has SQL Server bulk-copy semantics, which can differ from ordinary inserts for triggers, constraints,
+    logging, and error granularity.  This is why native loading is never selected by default.
+
+    @section freetds_native_bulk_streams Mutation Stream Events and Byte Accounting
+
+    On the native path the driver, rather than %BulkSqlUtil, owns exactly one
+    \c STREAM_BEGIN / \c STREAM_PROGRESS / \c STREAM_END sequence.  The \c "stream_bounds" native option defaults to
+    @ref True "True" and can disable those boundaries when set to @ref False "False".  Observer rejection marks the
+    terminal event as not executed and rolls the BCP work back to the savepoint.
+
+    The reported byte count is the exact sum of input field payloads handed to FreeTDS, excluding TDS and BCP framing.
+    Unicode strings use UTF-16LE bytes, other strings use the connection encoding, binary values use their raw bytes,
+    scalar numeric and boolean values use their textual representation, date/time values use the driver's timestamp
+    representation, and null values contribute zero bytes.  This can differ from the ordinary fallback's serialized
+    payload count because the native encoding is the value actually supplied to BCP.
+*/
