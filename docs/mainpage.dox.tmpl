@@ -32,22 +32,8 @@ Datasource db("sybase:user/pass@dbname(utf8):host:4100");
 Datasource db("freetds:user/pass@dbname(utf8):host:1433");
     @endcode
 
-    This driver supports the following DBI capabilities:
-    - \c DBI_CAP_TIME_ZONE_SUPPORT
-    - \c DBI_CAP_TRANSACTION_MANAGEMENT
-    - \c DBI_CAP_CHARSET_SUPPORT
-    - \c DBI_CAP_LOB_SUPPORT
-    - \c DBI_CAP_STORED_PROCEDURES
-    - \c DBI_CAP_BIND_BY_VALUE
-    - \c DBI_CAP_HAS_EXECRAW
-    - \c DBI_CAP_HAS_STATEMENT
-    - \c DBI_CAP_HAS_SELECT_ROW
-    - \c DBI_CAP_HAS_NUMBER_SUPPORT
-    - \c DBI_CAP_HAS_OPTION_SUPPORT
-    - \c DBI_CAP_SERVER_TIME_ZONE
-    - \c DBI_CAP_AUTORECONNECT
-    - \c DBI_CAP_HAS_BULK_LOAD (\c freetds with Microsoft SQL Server only, when built with compatible %Qore and
-      FreeTDS APIs)
+    The driver supports transactions, bound parameters, and prepared statements.
+    See @ref sybasecapabilitiesguide for supported features and their requirements.
 
     The driver employs efficient binary bindings for all non-text data types.
 
@@ -95,13 +81,6 @@ Sybase Client-Library/15.0/P-EBF13571 ESD #4/DRV.15.0.1/Linux x86_64/Linux 2.4.2
     @ref Qore::SQL::SQLStatement "SQLStatement" is active, the existing statement will be canceled before starting the
     new statement.
 
-    When built against a %Qore library with columnar DBI support,
-    \c Datasource::selectColumnar() and \c SQLStatement::fetchColumnar() return \c Qore::SQL::ColumnarResult
-    objects for column-oriented batch processing. Integer, floating-point, and safe
-    \c DECIMAL / \c NUMERIC result columns are returned as dense \c buffer<int64>, \c buffer<float64>, and
-    \c buffer<decimal128> columns, with nullable buffer variants when SQL \c NULL values are present; other values
-    are returned as typed column lists.
-
     Unlike many other Qore DBI drivers, this driver allows and can return results from multiple select statements
     issued with a single call. Additionally, it's possible for a stored procedure to return output paramters as well
     as one or more result sets from select statements. The output format for commands like this differs from standard
@@ -120,6 +99,7 @@ Sybase Client-Library/15.0/P-EBF13571 ESD #4/DRV.15.0.1/Linux x86_64/Linux 2.4.2
 
     @section sybasedocumentation Documentation
 
+    - @subpage sybasecapabilitiesguide
     - @anchor sybaseoptions @subpage sybaseoptionsguide
     - @anchor freetds_native_bulk_load @subpage sybasefreetds_native_bulk_loadguide
     - @anchor sybase_timezone @subpage sybase_timezoneguide
