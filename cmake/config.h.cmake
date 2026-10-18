@@ -22,8 +22,9 @@
 /* Define if Datasource::activeTransaction() is available */
 #cmakedefine HAVE_QORE_DATASOURCE_ACTIVE_TRANSACTION
 
-/* Define if QDBI_METHOD_EXECRAW is available */
-#cmakedefine _QORE_HAS_DBI_EXECRAW
+/* Define if QDBI_METHOD_EXECRAW is available; defined to 1, as qore/QoreLib.h defines it in Qore versions that
+   have it, so that the definitions are identical */
+#cmakedefine _QORE_HAS_DBI_EXECRAW 1
 
 /* Define if Qore has columnar DBI result APIs */
 #cmakedefine HAVE_QORE_COLUMNAR_RESULT

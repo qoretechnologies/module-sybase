@@ -576,7 +576,7 @@ void command::set_params(sybase_query &query, const QoreListNode* args, Exceptio
         memset(&datafmt, 0, sizeof(datafmt));
         datafmt.status = CS_INPUTVALUE;
         datafmt.namelen = CS_NULLTERM;
-        sprintf(datafmt.name, "@par%d", int(i + 1));
+        snprintf(datafmt.name, sizeof(datafmt.name), "@par%d", int(i + 1));
         datafmt.maxlength = CS_UNUSED;
         datafmt.count = 1;
 

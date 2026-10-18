@@ -847,11 +847,10 @@ int connection::init(const char* username,
 }
 
 void connection::discard_messages() {
-#ifdef DEBUG
-    CS_RETCODE ret =
-#endif
-        ct_diag(m_connection, CS_CLEAR, CS_ALLMSG_TYPE, CS_UNUSED, 0);
+    CS_RETCODE ret = ct_diag(m_connection, CS_CLEAR, CS_ALLMSG_TYPE, CS_UNUSED, 0);
     assert(ret == CS_SUCCEED);
+    // only checked when assertions are enabled
+    (void)ret;
 }
 
 // purges all outstanding messages using ct_diag
@@ -859,17 +858,11 @@ int connection::purge_messages(ExceptionSink *xsink) {
     int rc = 0;
     // make sure no messages have severity > 10
     int num;
-#ifdef DEBUG
-    CS_RETCODE ret =
-#endif
-        ct_diag(m_connection, CS_STATUS, CS_CLIENTMSG_TYPE, CS_UNUSED, &num);
+    CS_RETCODE ret = ct_diag(m_connection, CS_STATUS, CS_CLIENTMSG_TYPE, CS_UNUSED, &num);
     assert(ret == CS_SUCCEED);
     CS_CLIENTMSG cmsg;
     for (int i = 1; i <= num; ++i) {
-#ifdef DEBUG
-        ret =
-#endif
-            ct_diag(m_connection, CS_GET, CS_CLIENTMSG_TYPE, i, &cmsg);
+        ret = ct_diag(m_connection, CS_GET, CS_CLIENTMSG_TYPE, i, &cmsg);
         assert(ret == CS_SUCCEED);
         if (CS_SEVERITY(cmsg.msgnumber) > 10) {
             QoreStringNode *desc = new QoreStringNode;
@@ -885,17 +878,11 @@ int connection::purge_messages(ExceptionSink *xsink) {
             printd(1, "Operating System Error: %s\n", cmsg.osstring);
 #endif
     }
-#ifdef DEBUG
-    ret =
-#endif
-        ct_diag(m_connection, CS_STATUS, CS_SERVERMSG_TYPE, CS_UNUSED, &num);
+    ret = ct_diag(m_connection, CS_STATUS, CS_SERVERMSG_TYPE, CS_UNUSED, &num);
     assert(ret == CS_SUCCEED);
     CS_SERVERMSG smsg;
     for (int i = 1; i <= num; ++i) {
-#ifdef DEBUG
-        ret =
-#endif
-            ct_diag(m_connection, CS_GET, CS_SERVERMSG_TYPE, i, &smsg);
+        ret = ct_diag(m_connection, CS_GET, CS_SERVERMSG_TYPE, i, &smsg);
         assert(ret == CS_SUCCEED);
         if (smsg.severity > 10) {
             QoreStringNode *desc = new QoreStringNode;
@@ -909,11 +896,10 @@ int connection::purge_messages(ExceptionSink *xsink) {
         }
         printd(1, "server: line:%ld, severity:%ld, n:%d: %s", smsg.line, smsg.severity, smsg.msgnumber, smsg.text);
     }
-#ifdef DEBUG
-    ret =
-#endif
-        ct_diag(m_connection, CS_CLEAR, CS_ALLMSG_TYPE, CS_UNUSED, 0);
+    ret = ct_diag(m_connection, CS_CLEAR, CS_ALLMSG_TYPE, CS_UNUSED, 0);
     assert(ret == CS_SUCCEED);
+    // only checked when assertions are enabled
+    (void)ret;
     return rc;
 }
 
