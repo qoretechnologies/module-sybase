@@ -195,7 +195,15 @@ command* connection::setupCommand(const QoreString* cmd_text, const QoreListNode
         }
 
         std::unique_ptr<command> cmd(new command(*this, xsink));
+        // the command could not be allocated, or the query could not be bound: the exception is raised, and no
+        // command is returned
+        if (*xsink) {
+            return nullptr;
+        }
         cmd->bind_query(query, args, xsink);
+        if (*xsink) {
+            return nullptr;
+        }
 
         try {
             cmd->send(xsink);
@@ -215,6 +223,13 @@ QoreValue connection::execReadOutput(QoreString* cmd_text, const QoreListNode* q
     invalidateStatement();
 
     std::unique_ptr<command> cmd(setupCommand(cmd_text, qore_args, !doBinding, xsink));
+    // no command is returned when the query cannot be parsed or bound; the exception has been raised
+    // (dereferencing the null command here let an optimizing compiler drop the null check when the command was
+    // destroyed, which crashed in command::clear())
+    if (*xsink || !cmd) {
+        assert(*xsink);
+        return QoreValue();
+    }
 
     bool connection_reset = false;
 

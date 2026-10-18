@@ -6,7 +6,7 @@
 
     Qore Programming language
 
-    Copyright (C) 2007 - 2022 Qore Technologies
+    Copyright (C) 2007 - 2026 Qore Technologies
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -69,7 +69,31 @@ static int append_tsql_nvarchar_literal(QoreString& out, const QoreValue& v,
     return 0;
 }
 
+// Skips a delimited token whose closing delimiter is escaped by doubling it, as T-SQL single-quoted strings,
+// double-quoted identifiers and strings, and bracketed identifiers are; "s" points after the opening delimiter.
+// Returns false if the token is not terminated.
+static bool skip_delimited(const char*& s, char close) {
+    while (*s) {
+        if (*s++ == close) {
+            if (*s != close) {
+                return true;
+            }
+            // the delimiter is doubled: it is part of the token
+            ++s;
+        }
+    }
+    return false;
+}
+
+static bool is_name_char(char c) {
+    return isalnum(static_cast<unsigned char>(c)) || c == '_';
+}
+
 // returns 0=OK, -1=error (exception raised)
+// The SQL text is read as T-SQL: placeholders are not recognized in single-quoted strings, double-quoted strings and
+// identifiers, bracketed identifiers ([name]) and comments (-- to the end of the line, and /* */, which nest), a
+// "::" scope qualifier (as in "schema::name" or "geometry::Point()") is not a placeholder, nor is a ':' that is not
+// followed by a name (as after a label), and a '%' that is not followed by a letter is the modulo operator.
 int sybase_query::init(const QoreString *cmd_text,
         const QoreListNode *args,
         bool mssql,
@@ -82,43 +106,45 @@ int sybase_query::init(const QoreString *cmd_text,
    while (*s) {
        char ch = *s++;
 
-       // skip double quoted strings
-       if (ch == '"') {
-           for (;;) {
-               ch = *s++;
-               if (!ch) {
-                   // unterminated string - return without error; the DB will report it
-                   return 0;
-               }
-               if (ch == '\\' && *s) {
-                   ch = *s++;
-                   continue;
-               }
-               if (ch == '"') {
-                   goto next;
-               }
+       // skip line comments
+       if (ch == '-' && *s == '-') {
+           while (*s && *s != '\n' && *s != '\r') {
+               ++s;
            }
+           continue;
        }
-       // skip single quoted strings
-       if (ch == '\'') {
-           for (;;) {
-               ch = *s++;
-               if (!ch) {
-                   // unterminated string - return without error; the DB will report it
-                   return 0;
-               }
-               if (ch == '\'' && *s == '\'') {
-                   // escaped single quote in SQL
-                   s++;
-                   continue;
-               }
-               if (ch == '\'') {
-                   goto next;
+       // skip block comments, which nest in T-SQL
+       if (ch == '/' && *s == '*') {
+           ++s;
+           int depth = 1;
+           while (*s && depth) {
+               if (*s == '/' && s[1] == '*') {
+                   ++depth;
+                   s += 2;
+               } else if (*s == '*' && s[1] == '/') {
+                   --depth;
+                   s += 2;
+               } else {
+                   ++s;
                }
            }
+           continue;
+       }
+       // skip single-quoted strings, double-quoted strings and identifiers, and bracketed identifiers; a doubled
+       // closing delimiter is part of the token
+       if (ch == '\'' || ch == '"' || ch == '[') {
+           if (!skip_delimited(s, ch == '[' ? ']' : ch)) {
+               // unterminated string or identifier - return without error; the DB will report it
+               return 0;
+           }
+           continue;
        }
 
        if (ch == '%') {
+           // a '%' that is not followed by a letter is the modulo operator
+           if (!isalpha(static_cast<unsigned char>(*s))) {
+               continue;
+           }
            int offset = s - m_cmd.getBuffer() - 1;
            ch = *s++;
            if (ch == 'v') {
@@ -185,15 +211,22 @@ int sybase_query::init(const QoreString *cmd_text,
                return -1;
            }
        } else if (ch == ':') {
+           // "::" is a T-SQL scope qualifier, as in "schema::name" or "geometry::Point()", not a placeholder
+           if (*s == ':') {
+               while (*s == ':') {
+                   ++s;
+               }
+               continue;
+           }
+           // a ':' that is not followed by a name, such as after a label, is not a placeholder
+           if (!is_name_char(*s)) {
+               continue;
+           }
            // read placeholder name
            int offset = s - m_cmd.getBuffer() - 1;
 
            const char* placeholder_start = s;
-           while (isalnum(*s) || *s == '_') ++s;
-           if (s == placeholder_start) {
-               xsink->raiseException("DBI-EXEC-EXCEPTION", "Placeholder name missing after ':'");
-               return -1;
-           }
+           while (is_name_char(*s)) ++s;
            m_cmd.replace(offset, 1, "@");
 
            //param_list.resize(count + 1);

@@ -8,6 +8,15 @@
 
     When retrieving data, data types are converted to Qore types as per @ref sybase_to_qore.
 
+    @section sybase_placeholders Placeholders in SQL Text
+
+    Value placeholders (\c %v, \c %d, \c %s) and \c :name placeholders are found in the SQL text as T-SQL reads
+    it: they are not recognized in single-quoted strings, in double-quoted strings and identifiers, in bracketed
+    identifiers (<tt>[name]</tt>, where <tt>]]</tt> is a \c ]) or in comments (\c -- to the end of the line, and
+    <tt>/</tt><tt>* *</tt><tt>/</tt>, which nest).  A \c :: scope qualifier (<tt>schema::name</tt>,
+    <tt>type::method()</tt>) and a \c : that is not followed by a name, as after a label, are not placeholders, and a
+    \c % that is not followed by a letter is the modulo operator.
+
     @section sybase_and_freetds_binding_by_value Binding by Value
 
     \c DATETIME and \c TIME data types have a resolution of 1/300th of a second. Qore uses floating-point operations to convert to or from microseconds when binding and retrieving data and rounds to the nearest integer to minimize conversion errors.

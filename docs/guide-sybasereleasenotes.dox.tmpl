@@ -12,6 +12,16 @@
     - added driver-owned bounded mutation-stream reporting with exact serialized-payload byte accounting for native
       BCP loads
 
+    <b>Bug Fixes</b>
+    - fixed a crash of an optimized build when a statement could not be prepared, for example because of an
+      invalid placeholder: the command that was not created was destroyed, and the process crashed instead of raising
+      the exception; destroying a command also no longer throws an exception when it cannot be canceled
+    - placeholders are found in the SQL text as T-SQL reads it (see @ref sybase_placeholders): a \c :: scope
+      qualifier, as in <tt>alter authorization on schema::name</tt>, raised "Placeholder name missing after ':'"
+      (or crashed the process); placeholders in comments and bracketed identifiers were read and bound, a backslash
+      was taken for an escape in double-quoted identifiers, so the rest of the statement was not read, and a label
+      and the modulo operator raised an exception
+
     <b>Correctness and Compatibility</b>
     - native BCP loading participates in the caller's transaction and uses savepoint rollback for aborts
     - unsupported servers, table layouts, destination types, and older %Qore or FreeTDS APIs retain compatibility by

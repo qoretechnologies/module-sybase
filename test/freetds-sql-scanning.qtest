@@ -1,0 +1,151 @@
+#!/usr/bin/env qore
+# -*- mode: qore; indent-tabs-mode: nil -*-
+# Copyright (C) 2026 Qore Technologies, s.r.o.
+# SPDX-License-Identifier: MIT
+
+%modern
+%prepend-module-path "${SCRIPT_DIR}/../build"
+%requires QUnit
+%requires freetds
+
+%exec-class FreeTdsSqlScanningTest
+
+#! Tests that the SQL text is read as T-SQL when the driver looks for placeholders, and that a statement that fails
+#! raises an exception
+/** Placeholders (\c %v, \c %d, \c %s and \c :name) are only recognized outside of strings, quoted and bracketed
+    identifiers and comments; a T-SQL \c :: scope qualifier, a \c : after a label and the \c % modulo operator are not
+    placeholders.
+
+    The connection string is taken from the \c QORE_DB_CONNSTR_FREETDS environment variable; the tests are skipped
+    if no SQL Server connection can be made.
+*/
+class FreeTdsSqlScanningTest inherits QUnit::Test {
+    private {
+        *Datasource ds;
+        string skip_reason = "no connection";
+        string schema;
+    }
+
+    constructor() : Test("FreeTdsSqlScanningTest", "1.0", \ARGV) {
+        schema = sprintf("qore_scan_%d", getpid());
+        try {
+            *string connstr = ENV.QORE_DB_CONNSTR_FREETDS;
+            if (connstr) {
+                Datasource nds(connstr);
+                nds.open();
+                ds = nds;
+            } else {
+                skip_reason = "no SQL Server connection configured (QORE_DB_CONNSTR_FREETDS)";
+            }
+        } catch (hash<ExceptionInfo> ex) {
+            skip_reason = sprintf("cannot connect: %s: %s", ex.err, ex.desc);
+        }
+
+        addTestCase("a failing statement raises an exception", \failingStatementTest());
+        addTestCase("a :: scope qualifier is not a placeholder", \scopeQualifierTest());
+        addTestCase("placeholders in comments are not placeholders", \commentTest());
+        addTestCase("placeholders in identifiers and strings are not placeholders", \quotedTest());
+        addTestCase("a label and the modulo operator are not placeholders", \labelModuloTest());
+        set_return_value(main());
+    }
+
+    destructor() {
+        if (ds) {
+            try {
+                ds.rollback();
+                ds.exec(sprintf("if schema_id('%s') is not null drop schema %s", schema, schema));
+                ds.commit();
+            } catch () {
+            }
+            ds.close();
+        }
+    }
+
+    private checkConnection() {
+        if (!ds) {
+            testSkip(skip_reason);
+        }
+    }
+
+    #! A statement whose placeholders cannot be read raises an exception; the driver crashed (in an optimized build)
+    #! when it destroyed the command that it had not created
+    failingStatementTest() {
+        checkConnection();
+        assertThrows("DBI-EXEC-EXCEPTION", "Only %v or %d expected", \ds.exec(), "select %q as v");
+        assertThrows("DBI-EXEC-EXCEPTION", "Only %v or %d expected", \ds.select(), "select %q as v");
+        assertThrows("DBI-EXEC-EXCEPTION", "Only %v or %d expected", \ds.selectRow(), "select %q as v");
+        assertThrows("DBI-EXEC-EXCEPTION", "Only %v or %d expected", \ds.selectRows(), "select %q as v");
+        assertThrows("DBI-EXEC-EXCEPTION", "Only %v or %d expected", \ds.vexec(), ("select %q as v", (1,)));
+        ds.rollback();
+        # the connection is still usable
+        assertEq(1, ds.selectRow("select 1 as v").v);
+        # a statement that the server rejects raises an exception too
+        assertThrows("TDS-EXEC-ERROR", \ds.exec(), "select * from qore_no_such_table_xyz");
+        ds.rollback();
+        assertEq(2, ds.selectRow("select 2 as v").v);
+    }
+
+    #! "schema::name" and "type::method()" are T-SQL; the "::" was read as a placeholder with no name
+    scopeQualifierTest() {
+        checkConnection();
+        ds.exec(sprintf("create schema %s", schema));
+        ds.exec(sprintf("alter authorization on schema::%s to dbo", schema));
+        ds.exec(sprintf("grant select on schema::%s to public", schema));
+        int count = ds.selectRow("select count(*) as c from sys.database_permissions "
+            "where class_desc = 'SCHEMA' and major_id = schema_id(%v) and grantee_principal_id = 0", schema).c;
+        assertEq(1, count, "the schema permission is granted");
+        ds.exec(sprintf("revoke select on schema::%s to public", schema));
+        assertEq(0, ds.selectRow("select count(*) as c from sys.database_permissions "
+            "where class_desc = 'SCHEMA' and major_id = schema_id(%v) and grantee_principal_id = 0", schema).c);
+        ds.commit();
+
+        # a static method of a type, with a placeholder after it; the statement reaches the server as written, which
+        # runs it if the type is available (CLR enabled), and rejects it otherwise
+        try {
+            hash<auto> row = ds.selectRow("select cast(hierarchyid::GetRoot() as nvarchar(10)) as root, %v as v",
+                "after");
+            assertEq({"root": "/", "v": "after"}, row);
+        } catch (hash<ExceptionInfo> ex) {
+            assertEq("TDS-EXEC-ERROR", ex.err);
+            assertRegex("Common Language Runtime", ex.desc, "only the server's capability can reject it");
+            ds.rollback();
+        }
+    }
+
+    #! "--" and "/* */" comments, which nest in T-SQL, may contain anything
+    commentTest() {
+        checkConnection();
+        assertEq({"v": 5}, ds.selectRow("select %v as v -- :x %v %d and 10 % 3", 5));
+        assertEq({"v": 6}, ds.selectRow("select %v /* :x %v /* nested :y %d */ still a comment %v */ as v", 6));
+        assertEq({"v": 7, "w": 8}, ds.selectRow("select %v as v, -- :x %v\n%v as w", 7, 8));
+        assertEq({"v": 9}, ds.selectRow("select %v as v /* a :: b */", 9));
+    }
+
+    #! single-quoted strings, double-quoted identifiers and bracketed identifiers are not read for placeholders; a
+    #! doubled closing delimiter is part of them
+    quotedTest() {
+        checkConnection();
+        hash<auto> row = ds.selectRow("select 'x::y :z %v %d' as s, %v as [a:b], 1 as [c]]:d], 2 as \"e:f\", "
+            "3 as \"g\"\"%v\", 'it''s :x' as t", 10);
+        assertEq("x::y :z %v %d", row.s);
+        assertEq(10, row."a:b");
+        assertEq(1, row."c]:d");
+        assertEq(2, row."e:f");
+        assertEq(3, row."g\"%v");
+        assertEq("it's :x", row.t);
+        # a backslash is not an escape in T-SQL
+        row = ds.selectRow("select 4 as \"h\\\", %v as v", 11);
+        assertEq(4, row."h\\");
+        assertEq(11, row.v);
+    }
+
+    #! a ':' that is not followed by a name, as after a label, and a '%' that is not followed by a letter, as the
+    #! modulo operator, are not placeholders; a '%' followed by another letter is still an error
+    labelModuloTest() {
+        checkConnection();
+        assertEq({"v": 12}, ds.selectRow("start: select %v as v", 12));
+        assertEq({"m": 1, "n": 2, "p": 3}, ds.selectRow("select 10 % 3 as m, 11%3 as n, (%v % 4) as p", 7));
+        assertThrows("DBI-EXEC-EXCEPTION", "Only %v or %d expected", \ds.selectRow(), "select 10 %x 3 as m");
+        ds.rollback();
+    }
+}

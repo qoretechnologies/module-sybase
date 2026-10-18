@@ -482,11 +482,11 @@ command::~command() {
 
 void command::clear() {
    if (!m_cmd) return;
-   // cancel only unfinished, not already canceled command
+   // cancel only unfinished, not already canceled command; this is called by the destructor, which must not
+   // throw (an exception leaving a destructor terminates the process), so a failure to cancel is not reported:
+   // the command is dropped in any case
    if (lastRes != RES_CANCELED && lastRes != RES_END && !m_conn.wasConnectionAborted()) {
-      if (ct_cancel(0, m_cmd, CS_CANCEL_ALL) != CS_SUCCEED) {
-         throw ss::Error("TDS-EXEC-EXCEPTION", "ct_cancel failed");
-      }
+      ct_cancel(0, m_cmd, CS_CANCEL_ALL);
    }
    ct_cmd_drop(m_cmd);
    m_cmd = 0;
