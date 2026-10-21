@@ -65,6 +65,7 @@ public class SybaseStatementTest inherits QUnit::Test {
         addTestCase("stmt select values", \test_stmt_eq_select());
         addTestCase("stmt error", \test_error());
         addTestCase("stmt fetch columns", \test_fetch_columns());
+        addTestCase("stmt fetch rows in blocks", \test_fetch_rows_blocks());
         addTestCase("columnar select", \test_columnar_select());
         addTestCase("delete rows", \test_delete());
 
@@ -250,6 +251,37 @@ public class SybaseStatementTest inherits QUnit::Test {
         stmt.exec();
         h = stmt.fetchColumns(-1);
         testAssertionValue("fetch columns 6", h.name.size(), 5);
+
+        stmt.commit();
+    }
+
+    #! fetchRows() returns at most the given number of rows, starting with a row read by next()
+    test_fetch_rows_blocks() {
+        string query = "select number from " + TableName + " order by number";
+        SQLStatement stmt(ds);
+        on_exit stmt.rollback();
+
+        stmt.prepare(query);
+        stmt.exec();
+        list<int> sizes;
+        list<auto> numbers;
+        while (True) {
+            list<auto> l = stmt.fetchRows(2);
+            if (!l) {
+                break;
+            }
+            sizes += l.size();
+            numbers += (map $1.number, l);
+        }
+        testAssertionValue("fetchRows(2) block sizes", sizes, (2, 2, 1));
+        testAssertionValue("fetchRows(2) rows", numbers, (0, 1, 2, 3, 4));
+
+        stmt.exec();
+        testAssertionValue("next()", stmt.next(), True);
+        testAssertionValue("fetchRows(1) after next()", (map $1.number, stmt.fetchRows(1)), (0,));
+        testAssertionValue("fetchRows(2) after fetchRows(1)", (map $1.number, stmt.fetchRows(2)), (1, 2));
+        testAssertionValue("fetchRows(-1) after fetchRows(2)", (map $1.number, stmt.fetchRows(-1)), (3, 4));
+        testAssertionValue("fetchRows(2) at the end", stmt.fetchRows(2), ());
 
         stmt.commit();
     }

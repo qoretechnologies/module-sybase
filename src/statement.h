@@ -131,28 +131,20 @@ public:
     QoreListNode* fetch_rows(SQLStatement* stmt, int rows, ExceptionSink* xsink) {
         if (checkValid(xsink))
             return 0;
-        int r = rows;
         ReferenceHolder<QoreListNode> reslist(new QoreListNode(autoTypeInfo), xsink);
 
-        // next was already called once
-        do {
-            // according to the doc rows <= 0 means fetch all
-            if (r > 0) {
-                if (rows < 0)
-                   break;
-                rows--;
+        // rows <= 0 means all rows; a row read by next() and not yet returned is returned first, and no row is read
+        // after the last one returned
+        while (rows <= 0 || reslist->size() < static_cast<size_t>(rows)) {
+            // next() reads the remaining results, and raises the error of a later statement, at the end of the rows
+            if (!next(stmt, xsink)) {
+                break;
             }
-            if (*xsink)
-               return 0;
-
-            ReferenceHolder<QoreHashNode> h(xsink);
-            h = fetch_row(stmt, xsink);
-            if (!h)
-               continue;
-
-            reslist->push(h.release(), xsink);
-        } while (next(stmt, xsink));
-        // the error of a later statement is raised when the end of the rows is reached
+            reslist->push(release_res(), xsink);
+            if (!(reslist->size() % 100) && qore_check_cancel(xsink)) {
+                return nullptr;
+            }
+        }
         if (*xsink) {
             return nullptr;
         }

@@ -34,6 +34,9 @@
       - the results of a @ref Qore::SQL::SQLStatement "SQLStatement" that are not read are discarded with their
         errors when it is closed or executed again or when another call is made on the connection; such an error was
         raised by the next call
+    - @ref Qore::SQL::SQLStatement::fetchRows() "SQLStatement::fetchRows()" with a row count returns at most that
+      many rows; it returned one more after @ref Qore::SQL::SQLStatement::next() "SQLStatement::next()" or a previous
+      \c fetchRows() call
     - fixed a crash of an optimized build when a statement could not be prepared, for example because of an
       invalid placeholder: the command that was not created was destroyed, and the process crashed instead of raising
       the exception; destroying a command also no longer throws an exception when it cannot be canceled
