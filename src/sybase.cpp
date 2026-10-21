@@ -376,6 +376,8 @@ static void sybase_module_init(QoreModuleInitContext& ctx, ExceptionSink& xsink)
 
     methods.add(QDBI_METHOD_OPT_SET, sybase_opt_set);
     methods.add(QDBI_METHOD_OPT_GET, sybase_opt_get);
+    methods.registerOption(SYBASE_OPT_LOGIN_TIMEOUT, "login timeout in seconds; defaults to 60; 0 disables "
+        "the timeout; takes effect on the next connection", bigIntTypeInfo);
 
     methods.registerOption(DBI_OPT_NUMBER_OPT, "when set, numeric/decimal values are returned as integers if "
         "possible, otherwise as arbitrary-precision number values; the argument is ignored; setting this option "

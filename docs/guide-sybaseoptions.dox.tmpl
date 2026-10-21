@@ -4,6 +4,21 @@
 
     @tableofcontents
 
+    @section sybase_login_timeout Connection establishment
+
+    The \c login-timeout option accepts an integer from 0 to 2147483 seconds (default 60). Zero requests
+    the native unlimited timeout. Set it in the datasource constructor so it applies to the first login;
+    changing it later applies to the next connection. FreeTDS diagnostic handling now permits a timeout
+    to terminate login, instead of repeatedly restarting the wait.
+    @par Example
+    @code{.py}
+    Datasource ds("freetds:app/pass@orders%db.internal:1433{tds-version=7.4,login-timeout=5}");
+    ds.open();
+    @endcode
+    @note CT-Lib cancellation targets commands and cannot reliably interrupt the initial login. Use a
+    finite login timeout. A pending Qore cancellation is reported after the native login call returns.
+
+
     The \c sybase and \c freetds drivers support the following DBI options:
     - \c "optimal-numbers": return numeric types as an integer if possible, if not as an arbitrary-precision number
     - \c "string-numbers": return numeric types as strings (for backwards-compatibility)

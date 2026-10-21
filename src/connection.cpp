@@ -25,6 +25,8 @@
 
 #include <assert.h>
 #include <memory>
+#include <climits>
+#include <mutex>
 
 #include <ctpublic.h>
 
@@ -44,6 +46,29 @@
 
 static QoreString ver_str("begin tran select @@version commit tran");
 
+#ifdef FREETDS
+// FreeTDS's inline diagnostic handler returns CS_SUCCEED for login timeouts, which means
+// "keep waiting". Retain its diagnostics, but let the configured login timeout end the login.
+static CS_RETCODE login_client_message(CS_CONTEXT* ctx, CS_CONNECTION* conn, CS_CLIENTMSG* msg) {
+    CS_CLIENTMSG_FUNC store = nullptr;
+    if (ct_callback(ctx, nullptr, CS_GET, CS_CLIENTMSG_CB, &store) == CS_SUCCEED && store) {
+        store(ctx, conn, msg);
+    }
+    return CS_FAIL;
+}
+#endif
+
+static int parse_login_timeout(QoreValue value, CS_INT& timeout, ExceptionSink* xsink) {
+    int64 seconds = value.getAsBigInt();
+    if (value.getType() != NT_INT || seconds < 0 || seconds > INT_MAX / 1000) {
+        xsink->raiseException("TDS-OPTION-ERROR", "'login-timeout' must be an integer between 0 and %d seconds",
+            INT_MAX / 1000);
+        return -1;
+    }
+    timeout = seconds ? static_cast<CS_INT>(seconds) : CS_NO_LIMIT;
+    return 0;
+}
+
 #ifdef SYBASE
 // to serialize calls to ct_init() and ct_exit()
 QoreThreadLock ct_lock;
@@ -54,29 +79,28 @@ QoreThreadLock cs_lock;
 // QoreSybaseCancelHelper implementation
 //------------------------------------------------------------------------------
 
-QoreSybaseCancelHelper::QoreSybaseCancelHelper(CS_CONNECTION* conn)
-    : conn(conn) {
+struct QoreSybaseCancelHelper::State {
+    explicit State(CS_CONNECTION* conn) : conn(conn) {}
+    std::mutex mutex;
+    CS_CONNECTION* conn;
+};
+
+QoreSybaseCancelHelper::QoreSybaseCancelHelper(CS_CONNECTION* conn) {
     if (smh && conn) {
-        // Register cancel callback
-        smh->registerCancelCallback(this, [this]() -> bool {
-            // Load pointer atomically - it may be set to nullptr by destructor
-            CS_CONNECTION* c = this->conn.load(std::memory_order_acquire);
-            if (c) {
-                // ct_cancel with CS_CANCEL_ALL cancels the current operation on the connection
-                CS_RETCODE rc = ct_cancel(c, nullptr, CS_CANCEL_ALL);
-                return rc == CS_SUCCEED;
-            }
-            return false;
+        state = std::make_shared<State>(conn);
+        smh->registerCancelCallback(this, [state = state]() -> bool {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            return state->conn && ct_cancel(state->conn, nullptr, CS_CANCEL_ALL) == CS_SUCCEED;
         });
     }
 }
 
 QoreSybaseCancelHelper::~QoreSybaseCancelHelper() {
-    // Set pointer to nullptr atomically before unregistering to prevent
-    // use-after-free if a callback is currently being invoked
-    conn.store(nullptr, std::memory_order_release);
-    if (smh) {
+    if (state) {
         smh->unregisterCancelCallback(this);
+        // Synchronize callbacks already copied by requestInterrupt() before releasing the connection.
+        std::lock_guard<std::mutex> lock(state->mutex);
+        state->conn = nullptr;
     }
 }
 
@@ -616,8 +640,16 @@ int connection::init(const char* username,
         return -1;
     }
 
-    // set login timeout to 60 seconds
+    // Read connection options before opening; DBI applies setOption() only after open succeeds.
     CS_INT timeout = 60;
+    const QoreHashNode* options = ds->getConnectOptions();
+    if (options) {
+        QoreValue value = options->getKeyValue(SYBASE_OPT_LOGIN_TIMEOUT);
+        if (!value.isNothing() && parse_login_timeout(value, timeout, xsink)) {
+            return -1;
+        }
+    }
+    login_timeout = timeout == CS_NO_LIMIT ? 0 : timeout;
     ret = ct_con_props(m_connection, CS_SET, CS_LOGIN_TIMEOUT, &timeout, CS_UNUSED, 0);
     if (ret != CS_SUCCEED) {
         xsink->raiseException("TDS-CTLIB-SET-LOGIN-TIMEOUT", "ct_con_props(CS_LOGIN_TIMEOUT) failed with error %d", ret);
@@ -739,7 +771,31 @@ int connection::init(const char* username,
     // When using direct connection (hostname:port) with CS_SERVERADDR set,
     // we pass dbname as the server identifier (won't be looked up since CS_SERVERADDR is set),
     // then switch to the database with USE command after connecting
+#ifdef FREETDS
+    CS_CLIENTMSG_FUNC previous_handler = nullptr;
+    if (ct_callback(nullptr, m_connection, CS_GET, CS_CLIENTMSG_CB, &previous_handler) != CS_SUCCEED
+            || ct_callback(nullptr, m_connection, CS_SET, CS_CLIENTMSG_CB,
+                reinterpret_cast<CS_VOID*>(login_client_message)) != CS_SUCCEED) {
+        xsink->raiseException("TDS-CTLIB-SET-CALLBACK", "could not install the login message handler");
+        return -1;
+    }
+#endif
     ret = ct_connect(m_connection, (CS_CHAR*)dbname, strlen(dbname));
+    // CT-Lib cannot cancel login with ct_cancel(): there is no pending command yet. Preserve
+    // cancellation after the native login timeout/error, instead of replacing it with a CT-Lib error.
+    if (ret == CS_SUCCEED) {
+        connected = true;
+    }
+#ifdef FREETDS
+    if (ct_callback(nullptr, m_connection, CS_SET, CS_CLIENTMSG_CB,
+            reinterpret_cast<CS_VOID*>(previous_handler)) != CS_SUCCEED) {
+        xsink->raiseException("TDS-CTLIB-SET-CALLBACK", "could not restore the client message handler after login");
+        return -1;
+    }
+#endif
+    if (qore_check_cancel(xsink, "connecting to the TDS server")) {
+        return -1;
+    }
     if (ret != CS_SUCCEED) {
         do_exception(xsink, "TDS-CTLIB-CONNECT-ERROR", "ct_connect() failed with error %d", ret);
         return -1;
@@ -1171,6 +1227,14 @@ const char* connection::tdsVersionString(CS_INT ver) {
 #endif
 
 DLLLOCAL int connection::setOption(const char* opt, QoreValue val, ExceptionSink* xsink) {
+    if (!strcasecmp(opt, SYBASE_OPT_LOGIN_TIMEOUT)) {
+        CS_INT timeout;
+        if (parse_login_timeout(val, timeout, xsink)) {
+            return -1;
+        }
+        login_timeout = val.getAsBigInt();
+        return 0;
+    }
     if (!strcasecmp(opt, DBI_OPT_NUMBER_OPT)) {
         numeric_support = OPT_NUM_OPTIMAL;
         return 0;
@@ -1219,6 +1283,9 @@ DLLLOCAL int connection::setOption(const char* opt, QoreValue val, ExceptionSink
 }
 
 DLLLOCAL QoreValue connection::getOption(const char* opt) {
+    if (!strcasecmp(opt, SYBASE_OPT_LOGIN_TIMEOUT)) {
+        return login_timeout;
+    }
     if (!strcasecmp(opt, DBI_OPT_NUMBER_OPT)) {
         return numeric_support == OPT_NUM_OPTIMAL;
     }

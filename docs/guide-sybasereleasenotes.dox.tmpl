@@ -13,6 +13,10 @@
       BCP loads
 
     <b>Bug Fixes</b>
+    - fixed FreeTDS login timeouts retrying indefinitely through the inline diagnostic callback
+    - added \c login-timeout and preserved Qore cancellation errors after native login returns
+    - made statement cancellation callbacks safe when copied concurrently with helper destruction
+
     - every result of SQL that returns more than one result, such as a batch of statements or a stored procedure,
       is read, and the error of any statement is raised by the call that reads it (see @ref sybase_multiple_results):
       - @ref Qore::SQL::Datasource::selectRows() "Datasource::selectRows()",

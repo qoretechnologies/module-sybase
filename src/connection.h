@@ -173,8 +173,8 @@ public:
     QoreSybaseCancelHelper& operator=(const QoreSybaseCancelHelper&) = delete;
 
 private:
-    // Use atomic pointer for thread safety with callback invocation
-    std::atomic<CS_CONNECTION*> conn;
+    struct State;
+    std::shared_ptr<State> state;
     QoreSandboxManagerHelper smh;
 };
 
@@ -319,6 +319,7 @@ private:
     const QoreEncoding* enc = nullptr;
     Datasource* ds;
     int numeric_support = OPT_NUM_OPTIMAL;
+    int64 login_timeout = 60;
     const AbstractQoreZoneInfo* server_tz = nullptr;
     bool optimized_date_binds = false;
 #ifndef SYBASE
@@ -344,6 +345,7 @@ private:
 };
 
 constexpr const char* SYBASE_OPT_OPTIMIZED_DATE_BINDS = "optimized-date-binds";
+constexpr const char* SYBASE_OPT_LOGIN_TIMEOUT = "login-timeout";
 #ifndef SYBASE
 // issue #4321: option to set the TDS protocol version programmatically for ad-hoc
 // connections without requiring a freetds.conf entry
