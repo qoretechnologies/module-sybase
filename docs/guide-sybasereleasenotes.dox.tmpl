@@ -38,6 +38,10 @@
       and @ref Qore::SQL::SQLStatement::getOutputRows() "SQLStatement::getOutputRows()" returns the output; both
       returned nothing and printed the name of an internal function on standard output
       (see @ref sybase_statements)
+    - @ref Qore::SQL::SQLStatement::bindValues() "SQLStatement::bindValues()" and
+      @ref Qore::SQL::SQLStatement::bindValuesArgs() "SQLStatement::bindValuesArgs()" bind the values as
+      @ref Qore::SQL::SQLStatement::bind() "SQLStatement::bind()" does; they printed the name of an internal function
+      on standard output and bound nothing, so executing the statement failed
     - @ref Qore::SQL::SQLStatement::fetchRows() "SQLStatement::fetchRows()" with a row count returns at most that
       many rows; it returned one more after @ref Qore::SQL::SQLStatement::next() "SQLStatement::next()" or a previous
       \c fetchRows() call

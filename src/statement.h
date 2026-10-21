@@ -20,7 +20,6 @@
 #include <qore/QoreHashNode.h>
 
 #include "connection.h"
-#include "emptystatement.h"
 #include "command.h"
 #include "dbmodulewrap.h"
 #include "utils.h"
@@ -37,7 +36,7 @@ inline bool expect_row(command::ResType rt) {
     }
 }
 
-class Statement : public EmptyStatement {
+class Statement {
     QoreHashNode *_execRes;
 
     bool has_res() {

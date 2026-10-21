@@ -204,20 +204,12 @@ public:
         }
     }
 
-    static int bind_values(SQLStatement* stmt,
-            const QoreListNode &l,
-            ExceptionSink* xsink)
-    {
-        // I would rather use boost::ref here, but code is not prepared for
-        // that.
-
-        try {
-            if (xsink->isException()) return 0;
-            return module(stmt)->bind_values(stmt, l, xsink);
-        } catch (const Error &e) {
-            e.raise(xsink);
-            return 0;
-        }
+    // the values are bound as with bind(): the driver binds values only; output placeholders are named with
+    // bindPlaceholders()
+    static int bind_values(SQLStatement* stmt, const QoreListNode& l, ExceptionSink* xsink) {
+        ModuleWrap *mv = module_wrap(stmt);
+        mv->set_params(&l, xsink);
+        return 0;
     }
 
     static int exec(SQLStatement* stmt, ExceptionSink* xsink) {

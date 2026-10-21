@@ -8,7 +8,6 @@ noinst_HEADERS = src/bulk_load.h \
 	src/connection.h \
 	src/conversions.h \
 	src/dbmodulewrap.h \
-	src/emptystatement.h \
 	src/encoding_helpers.h \
 	src/error.h \
 	src/resultfactory.h \

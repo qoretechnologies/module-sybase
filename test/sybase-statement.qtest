@@ -68,6 +68,7 @@ public class SybaseStatementTest inherits QUnit::Test {
         addTestCase("stmt fetch rows in blocks", \test_fetch_rows_blocks());
         addTestCase("stmt describe", \test_describe());
         addTestCase("stmt getOutputRows", \test_get_output_rows());
+        addTestCase("stmt bindValues", \test_bind_values());
         addTestCase("columnar select", \test_columnar_select());
         addTestCase("delete rows", \test_delete());
 
@@ -340,6 +341,23 @@ public class SybaseStatementTest inherits QUnit::Test {
         testAssertionValue("getOutputRows numbers", rows.number, (0, 1, 2, 3, 4));
         stmt.exec();
         testAssertionValue("getOutputRows and getOutput", rows, stmt.getOutput());
+        stmt.commit();
+    }
+
+    #! bindValues() and bindValuesArgs() bind the values of the placeholders as bind() does
+    test_bind_values() {
+        SQLStatement stmt(ds);
+        on_exit stmt.rollback();
+
+        stmt.prepare("select name, number from " + TableName + " where number = %v or name = %v order by number");
+        stmt.bindValues(1, "three");
+        testAssertionValue("bindValues", stmt.fetchRows(-1), ({"name": "one", "number": 1}, {"name": "three",
+            "number": 3}));
+        stmt.bindValuesArgs((2, "four"));
+        testAssertionValue("bindValuesArgs", stmt.fetchRows(-1), ({"name": "two", "number": 2}, {"name": "four",
+            "number": 4}));
+        stmt.bind(0, "zero");
+        testAssertionValue("bind", stmt.fetchRows(-1), ({"name": "zero", "number": 0},));
         stmt.commit();
     }
 
