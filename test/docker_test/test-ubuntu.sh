@@ -25,6 +25,10 @@ echo "export QORE_GID=999" >> ${ENV_FILE}
 
 export MAKE_JOBS=4
 
+# the tests must load the drivers of this tree: reject relative module paths in them, and require the build directory
+# in the module path of every test that loads a driver
+${MODULE_SRC_DIR}/test/docker_test/check-module-paths.sh freetds sybase
+
 # build module and install
 echo && echo "-- building module --"
 cd ${MODULE_SRC_DIR}

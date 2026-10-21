@@ -4,6 +4,7 @@
 %modern
 %no-child-restrictions
 
+%prepend-module-path "${SCRIPT_DIR}/../build"
 %requires QUnit
 %requires freetds
 
