@@ -29,7 +29,7 @@ class MultipleResultSetsTest inherits QUnit::Test {
         string table;
 
         const MultipleResultSets = "returned more than one result set; use select\\(\\) or exec\\(\\)";
-        const Procedures = ("upd", "noop", "err", "two");
+        const Procedures = ("upd", "noop", "err", "two", "upd21");
     }
 
     constructor() : Test("MultipleResultSetsTest", "1.0", \ARGV) {
@@ -60,6 +60,7 @@ class MultipleResultSetsTest inherits QUnit::Test {
         addTestCase("SQLStatement rejects a second result set", \statementMultipleTest());
         addTestCase("SQLStatement reports the total row count", \statementRowCountTest());
         addTestCase("SQLStatement discards the results that are not read", \statementAbandonTest());
+        addTestCase("a procedure gives the row count of its last statement", \procedureRowCountTest());
         set_return_value(main());
     }
 
@@ -85,6 +86,8 @@ class MultipleResultSetsTest inherits QUnit::Test {
             "raiserror('qore multiple results failure', 16, 1) end", table, table));
         ds.exec(sprintf("create procedure %s_two as begin select id from %s where id = 1; "
             "select name from %s where id = 2 end", table, table, table));
+        ds.exec(sprintf("create procedure %s_upd21 as begin update %s set name = name where id < 3; "
+            "update %s set name = name where id = 3 end", table, table, table));
         ds.commit();
     }
 
@@ -431,6 +434,35 @@ class MultipleResultSetsTest inherits QUnit::Test {
         stmt.prepare(sql("update T set name = name where id < 3; update T set name = name where id = 3"));
         stmt.exec();
         assertEq(-1, stmt.affectedRows());
+    }
+
+    #! FreeTDS returns one row count for the statements of a procedure that return no rows: that of the last one
+    /** the server sends the row count of each statement; SQL Server reports a row count of 1 for RETURN
+    */
+    procedureRowCountTest() {
+        checkConnection();
+        on_exit {
+            ds.rollback();
+            ds.exec("set nocount off");
+        }
+
+        # the same statements in a batch give each row count
+        assertEq({"query0": 2, "query1": 1},
+            ds.exec(sql("update T set name = name where id < 3; update T set name = name where id = 3")));
+        assertEq(1, ds.exec(sql("exec T_upd21")));
+        {
+            SQLStatement stmt(ds);
+            on_exit stmt.close();
+            stmt.prepare(sql("exec T_upd21"));
+            stmt.exec();
+            assertEq(1, stmt.affectedRows());
+        }
+        # a procedure that changes no rows: the row count of RETURN
+        assertEq(1, ds.exec(sql("exec T_noop")));
+        ds.exec("set nocount on");
+        # exec() returns 0 without a result
+        assertEq(0, ds.exec(sql("exec T_noop")));
+        assertEq(0, ds.exec(sql("exec T_upd21")));
     }
 
     #! results after rows that are not read to the end are discarded, with their errors

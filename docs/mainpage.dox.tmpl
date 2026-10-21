@@ -160,10 +160,17 @@ list<hash<auto>> rows = db.selectRows("update t set flag = 1 where id < 3; selec
     |Return Parameters and Other Results|A hash is returned with keys \c params, giving the output parameter \
         values as above, and \c query, giving the other results (result sets and row counts) as described above.
 
-    Server notes:
+    Server and client library notes:
     - Microsoft SQL Server reports no row counts after <tt>SET NOCOUNT ON</tt>, which applies to the connection
-      until it is turned off
-    - for a stored procedure, the row count reported after its return status is included as any other row count
+      until it is turned off; in a stored procedure, it applies until the procedure returns
+    - with the \c freetds driver, the statements of a stored procedure that return no rows give at most one row
+      count: the row count of the last such statement after the procedure's last result set; FreeTDS does not return
+      the row counts of the others, which the server sends, so a procedure that updates 2 rows and then 1 row returns
+      1, and one that updates rows and then returns a result set returns only the result set (the statements of a
+      batch give each row count)
+    - Microsoft SQL Server reports a row count of 1 for a variable assignment (<tt>SET \@v = ...</tt> or
+      <tt>SELECT \@v = ...</tt>) and for \c RETURN in a stored procedure, so a procedure that changes no rows, such as
+      one that only returns a status, returns a row count of 1 unless it sets <tt>SET NOCOUNT ON</tt>
 
     @section sybasedocumentation Documentation
 
