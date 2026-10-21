@@ -127,9 +127,11 @@ Sybase Client-Library/15.0/P-EBF13571 ESD #4/DRV.15.0.1/Linux x86_64/Linux 2.4.2
         @ref Qore::SQL::Datasource::selectColumnar() "Datasource::selectColumnar()"|Row counts are skipped and the \
         only result set is returned.  A second result set raises \c TDS-MULTIPLE-RESULT-SETS-ERROR, for example \
         "SQL passed to selectRows() returned more than one result set; use select() or exec()".  Without a result \
-        set, the call behaves as for a single statement that returns none: \c selectRows() and \
-        \c selectRowsTyped() return the total row count if it is greater than 0, \c selectRow() raises \
-        \c DBI-SELECT-ROW-ERROR for it, and \c selectColumnar() raises \c COLUMNAR-RESULT-ERROR.
+        set, the call behaves as for a single statement that returns none, with the total of the row counts, as \
+        \c SQLStatement::affectedRows() gives it: \c selectRows() and \c selectRowsTyped() return the total \
+        row count if it is greater than 0 (ex: 3 for statements updating 2 rows and 1 row), and no value \
+        otherwise, \c selectRow() raises \c DBI-SELECT-ROW-ERROR for a total greater than 0, and \
+        \c selectColumnar() raises \c COLUMNAR-RESULT-ERROR.
     |@ref Qore::SQL::SQLStatement "SQLStatement"|@ref Qore::SQL::SQLStatement::exec() "SQLStatement::exec()" \
         reads the row counts and return status results before the first result set, raising the error of a failing \
         statement; without a result set, it reads every result.  \

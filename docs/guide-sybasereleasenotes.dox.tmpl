@@ -20,7 +20,8 @@
         @ref Qore::SQL::Datasource::selectRow() "Datasource::selectRow()" skip row counts and return the only result
         set; they returned every result in a hash with keys \c query0, \c query1, ..., which
         \c selectRow() returned as if it were the row; a second result set raises
-        \c TDS-MULTIPLE-RESULT-SETS-ERROR
+        \c TDS-MULTIPLE-RESULT-SETS-ERROR, and without a result set \c selectRows() returns the total row count,
+        as for a single statement
       - @ref Qore::SQL::Datasource::selectColumnar() "Datasource::selectColumnar()" returned the first result set and
         did not read the results after it, so a second result set was ignored and the error of a later statement was
         raised by the next call on the connection, or not at all; it skips return status results before the result
