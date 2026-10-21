@@ -7,7 +7,7 @@
 
     Qore Programming language
 
-    Copyright (C) 2007 - 2022 Qore Technologies s.r.o.
+    Copyright (C) 2007 - 2026 Qore Technologies s.r.o.
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -97,11 +97,15 @@ public:
     }
 
     DLLLOCAL void cancelDisconnect() {
-        assert(m_cmd);
+        // the command has already been dropped if the connection was lost while it was being read
+        if (!m_cmd) {
+            return;
+        }
         //printd(5, "command::cancelIntern() %d this: %p m_cmd: %p\n", cancelIntern(), this, m_cmd);
         cancelIntern();
         ct_cmd_drop(m_cmd);
         m_cmd = 0;
+        lastRes = RES_CANCELED;
     }
 
     DLLLOCAL QoreHashNode* fetch_row(ExceptionSink* xsink, const Placeholders *ph = 0);
@@ -111,10 +115,45 @@ public:
             return 0;
 
         lastRes = RES_CANCELED;
-        return cancelIntern();
+        return m_cmd ? cancelIntern() : 0;
     }
 
     DLLLOCAL int get_row_count();
+
+    //! returns the total of the row counts read so far, or -1 if the server reported none
+    /** the row count reported at the end of a result set (the number of rows selected) is not included
+    */
+    DLLLOCAL int get_affected_rows() const;
+
+    //! returns true if the rows of the current result have been read to the end
+    DLLLOCAL bool result_ended() const {
+        return lastRes == RES_NONE;
+    }
+
+    //! returns true if every result has been read, or the command has been canceled
+    DLLLOCAL bool results_read() const {
+        return lastRes == RES_END || lastRes == RES_CANCELED;
+    }
+
+    //! reads and discards the rows of the current result (a return status or output parameter result)
+    /** @return 0 = OK, -1 = error (exception raised)
+    */
+    DLLLOCAL int skip_result(ExceptionSink* xsink);
+
+    //! reads the results after a result set: row counts are added, return status and output parameter results are
+    //! skipped, and another result set raises \c TDS-MULTIPLE-RESULT-SETS-ERROR
+    /** @param conn the connection
+        @param desc describes the SQL for the exception, ex: "SQL passed to selectRows()"
+        @param xsink for errors of later statements and the exception above
+
+        @return 0 = all results have been read, -1 = error (exception raised)
+    */
+    DLLLOCAL int finish_results(connection& conn, const char* desc, ExceptionSink* xsink);
+
+    //! raises \c TDS-MULTIPLE-RESULT-SETS-ERROR for a call that returns one result set
+    /** @param desc describes the SQL, ex: "SQL passed to selectRows()"
+    */
+    DLLLOCAL static void raise_multiple_result_sets(const char* desc, ExceptionSink* xsink);
 
     DLLLOCAL command(connection& conn, ExceptionSink* xsink);
     DLLLOCAL ~command();
@@ -133,7 +172,13 @@ public:
     // returns 0=OK, -1=error (exception raised)
     DLLLOCAL void set_params(sybase_query &query, const QoreListNode *args, ExceptionSink *xsink);
 
-    DLLLOCAL QoreValue readOutput(connection& conn, command& cmd, bool list, bool& connection_reset, bool cols, ExceptionSink* xsink, bool single_row = false);
+    //! reads every result of the command
+    /** @param only_result_set if not null, the call returns one result set: row counts are skipped, and a second
+        result set raises \c TDS-MULTIPLE-RESULT-SETS-ERROR; the value describes the SQL for the exception, ex:
+        "SQL passed to selectRows()"; without a result set, the total row count is returned (if greater than 0)
+    */
+    DLLLOCAL QoreValue readOutput(connection& conn, command& cmd, bool list, bool& connection_reset, bool cols,
+            ExceptionSink* xsink, bool single_row = false, const char* only_result_set = nullptr);
 
     DLLLOCAL QoreHashNode *read_cols(const Placeholders *placeholder_list,
                                     int cnt,
@@ -168,6 +213,12 @@ private:
     CS_COMMAND* m_cmd;
     CS_INT rowcount;
     ResType lastRes;
+    //! the total of the row counts read
+    int64 total_rowcount = 0;
+    //! true if the server reported a row count
+    bool rowcount_reported = false;
+    //! true after a row or output parameter result: the row count reported at its end is not added
+    bool after_result = false;
 
     Columns colinfo;
     row_output_buffers out_buffers;
@@ -175,14 +226,19 @@ private:
     DLLLOCAL int retr_colinfo(ExceptionSink* xsink);
 
     DLLLOCAL int ensure_colinfo(ExceptionSink* xsink) {
-        if (!colinfo.need_refresh())
+        // after the last result, the columns of the last result set are kept: a fetch returns no rows
+        if (!colinfo.need_refresh() || (results_read() && !colinfo.empty()))
         return 0;
         return retr_colinfo(xsink);
     }
 
     // returns 0=OK, -1=error (exception raised)
     DLLLOCAL int get_row_description(row_result_t &result, unsigned column_count, class ExceptionSink *xsink);
-    DLLLOCAL int setup_output_buffers(const row_result_t &input_row_descriptions, class ExceptionSink *xsink);
+    DLLLOCAL int setup_output_buffers(const row_result_t &input_row_descriptions, class ExceptionSink *xsink) {
+        return setup_output_buffers(input_row_descriptions, out_buffers, xsink);
+    }
+    DLLLOCAL int setup_output_buffers(const row_result_t& input_row_descriptions, row_output_buffers& buffers,
+            ExceptionSink* xsink);
 
     DLLLOCAL int append_buffers_to_list(row_result_t &column_info, row_output_buffers& all_buffers, class QoreHashNode *h, ExceptionSink* xsink);
 

@@ -24,6 +24,9 @@ hash result = db.exec("declare @string varchar(40), @int int
 exec get_values :string output, :int output");
     @endcode
 
+    A procedure returns its result sets and row counts, and a return status; see @ref sybase_multiple_results for how
+    they are returned, and for procedures that return more than one result set.
+
     @note FreeTDS Limitations\n
     The \c freetds driver is not able to retrieve output parameter values when executing queries on MS SQL Server 2000
     or above (tds version 5.0 or above), due to the fact that newer MS SQL Server dataservers no longer return output

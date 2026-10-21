@@ -1,110 +1,467 @@
 #!/usr/bin/env qore
+# -*- mode: qore; indent-tabs-mode: nil -*-
+# Copyright (C) 2026 Qore Technologies, s.r.o.
+# SPDX-License-Identifier: MIT
 
 %modern
-
+%prepend-module-path "${SCRIPT_DIR}/../build"
 %requires QUnit
+%requires freetds
 
 %exec-class MultipleResultSetsTest
 
-public class MultipleResultSetsTest inherits QUnit::Test {
+#! Tests SQL that returns more than one result: a batch of statements, or a stored procedure
+/** - Datasource::exec(), execRaw(), select() and selectTyped() return every result
+    - selectRows(), selectRowsTyped(), selectRow() and selectColumnar() skip row counts and return exactly one result
+      set
+    - SQLStatement returns the rows of one result set, reads the remaining results when its rows have been read, and
+      reports the total row count
+    - the error of any statement is raised by the call that reads it
+
+    The connection string is taken from the \c QORE_DB_CONNSTR_FREETDS environment variable; the tests are skipped
+    if no SQL Server connection can be made.
+*/
+class MultipleResultSetsTest inherits QUnit::Test {
     private {
-        Datasource ds;
+        *Datasource ds;
+        string skip_reason = "no connection";
+        # the name of the test table; procedures are named <table>_<name>
+        string table;
+
+        const MultipleResultSets = "returned more than one result set; use select\\(\\) or exec\\(\\)";
+        const Procedures = ("upd", "noop", "err", "two");
     }
 
-    constructor() : Test("MultipleResultSetsTest", "1.0") {
-        string connstr = ENV.QORE_DB_CONNSTR_FREETDS ?? "freetds:test/test@mssql-local";
-        ds = new Datasource(connstr);
+    constructor() : Test("MultipleResultSetsTest", "1.0", \ARGV) {
+        table = sprintf("qore_mr_%d", getpid());
+        try {
+            *string connstr = ENV.QORE_DB_CONNSTR_FREETDS;
+            if (connstr) {
+                Datasource nds(connstr);
+                nds.open();
+                ds = nds;
+                setUpObjects();
+            } else {
+                skip_reason = "no SQL Server connection configured (QORE_DB_CONNSTR_FREETDS)";
+            }
+        } catch (hash<ExceptionInfo> ex) {
+            skip_reason = sprintf("cannot connect: %s: %s", ex.err, ex.desc);
+            remove ds;
+        }
 
-        addTestCase("two SELECT statements", \testTwoSelects());
-        addTestCase("three SELECT statements", \testThreeSelects());
-        addTestCase("mixed result types", \testMixedResultTypes());
-        addTestCase("select with row counts", \testSelectWithRowCounts());
-        addTestCase("empty result sets", \testEmptyResultSets());
-        addTestCase("different column counts", \testDifferentColumnCounts());
-
+        addTestCase("exec() and select() return every result", \allResultsTest());
+        addTestCase("the error of a later statement is raised", \laterErrorTest());
+        addTestCase("an error reported by a procedure after its rows is raised", \procedureErrorTest());
+        addTestCase("calls returning one result set skip the row counts", \oneResultSetTest());
+        addTestCase("calls returning one result set reject a second one", \multipleResultSetsTest());
+        addTestCase("calls returning one result set without a result set", \noResultSetTest());
+        addTestCase("a return status before the result set is skipped", \statusBeforeResultSetTest());
+        addTestCase("SQLStatement reads the results after its result set", \statementTest());
+        addTestCase("SQLStatement rejects a second result set", \statementMultipleTest());
+        addTestCase("SQLStatement reports the total row count", \statementRowCountTest());
+        addTestCase("SQLStatement discards the results that are not read", \statementAbandonTest());
         set_return_value(main());
     }
 
     destructor() {
-        try { ds.exec("DROP TABLE multi_rs_test"); } catch () {}
+        if (ds) {
+            try {
+                ds.rollback();
+                dropObjects();
+                ds.commit();
+            } catch () {
+            }
+            ds.close();
+        }
+    }
+
+    private setUpObjects() {
+        dropObjects();
+        ds.exec(sprintf("create table %s (id int primary key, name varchar(20))", table));
+        ds.exec(sprintf("insert into %s values (1, 'one'), (2, 'two'), (3, 'three')", table));
+        ds.exec(sprintf("create procedure %s_upd as update %s set name = name where id < 3", table, table));
+        ds.exec(sprintf("create procedure %s_noop as return 0", table));
+        ds.exec(sprintf("create procedure %s_err as begin select id from %s where id = 1; "
+            "raiserror('qore multiple results failure', 16, 1) end", table, table));
+        ds.exec(sprintf("create procedure %s_two as begin select id from %s where id = 1; "
+            "select name from %s where id = 2 end", table, table, table));
         ds.commit();
-        ds.close();
     }
 
-    setUp() {
-        try { ds.exec("DROP TABLE multi_rs_test"); } catch () {}
-        ds.exec("CREATE TABLE multi_rs_test (id INT, name VARCHAR(50), value DECIMAL(10,2))");
-        ds.exec("INSERT INTO multi_rs_test VALUES (1, 'first', 10.50)");
-        ds.exec("INSERT INTO multi_rs_test VALUES (2, 'second', 20.75)");
-        ds.exec("INSERT INTO multi_rs_test VALUES (3, 'third', 30.25)");
-        ds.commit();
+    private dropObjects() {
+        foreach string p in (Procedures) {
+            ds.exec(sprintf("if object_id('%s_%s') is not null drop procedure %s_%s", table, p, table, p));
+        }
+        ds.exec(sprintf("if object_id('%s') is not null drop table %s", table, table));
     }
 
-    testTwoSelects() {
-        setUp();
-
-        # Execute two SELECT statements in one batch
-        string sql = "SELECT id, name FROM multi_rs_test WHERE id = 1; SELECT id, name FROM multi_rs_test WHERE id = 2";
-        auto results = ds.select(sql);
-
-        # Results should be returned - verify we got some data
-        assertTrue(results.size() > 0, "got results from two selects");
-
-        # Alternative: use selectRows to get data as list
-        auto rows = ds.selectRows(sql);
-        assertTrue(rows.size() > 0, "got rows from two selects");
+    private checkConnection() {
+        if (!ds) {
+            testSkip(skip_reason);
+        }
     }
 
-    testThreeSelects() {
-        setUp();
-
-        # Execute three SELECT statements
-        string sql = "SELECT 1 AS a; SELECT 2 AS b; SELECT 3 AS c";
-        auto results = ds.select(sql);
-
-        assertTrue(results.size() > 0, "got results from three selects");
+    #! returns the SQL with "T" replaced by the test table name
+    private string sql(string sql) {
+        return replace(sql, "T", table);
     }
 
-    testMixedResultTypes() {
-        setUp();
-
-        # Mix different column types in each result set
-        string sql = "SELECT id FROM multi_rs_test; SELECT name FROM multi_rs_test; SELECT value FROM multi_rs_test";
-        auto results = ds.select(sql);
-
-        assertTrue(results.size() > 0, "got results from mixed type selects");
+    #! the connection can run another call, which does not raise an error left over from the call before
+    private checkConnectionUsable(string label) {
+        assertEq({"c": 3}, ds.selectRow(sql("select count(*) as c from T")), label + ": connection usable");
     }
 
-    testSelectWithRowCounts() {
-        setUp();
+    allResultsTest() {
+        checkConnection();
+        on_exit ds.rollback();
 
-        # Mix SELECT with DML that returns row counts
-        # Note: The behavior here depends on driver implementation
-        string sql = "SELECT COUNT(*) AS cnt FROM multi_rs_test; UPDATE multi_rs_test SET value = value + 1 WHERE id = 1; SELECT COUNT(*) AS cnt FROM multi_rs_test";
+        # each result set and each row count > 0, in order
+        hash<auto> expected = {
+            "query0": {"id": (1,)},
+            "query1": {"name": ("two",)},
+        };
+        string two = sql("select id from T where id = 1; select name from T where id = 2");
+        assertEq(expected, ds.exec(two));
+        assertEq(expected, ds.execRaw(two));
+        assertEq(expected, ds.select(two));
+        # selectTyped() returns the results as select() does
+        assertEq(expected, ds.selectTyped(two));
+        assertEq(expected, ds.exec(sql("exec T_two")));
 
-        auto results = ds.exec(sql);
-        ds.rollback();  # Roll back the update
-
-        assertTrue(True, "mixed select and DML executed");
+        expected = {
+            "query0": 2,
+            "query1": {"id": (1, 2, 3)},
+        };
+        assertEq(expected, ds.exec(sql("update T set name = name where id < 3; select id from T order by id")));
+        assertEq({"query0": {"id": (1, 2, 3)}, "query1": 2},
+            ds.select(sql("select id from T order by id; update T set name = name where id < 3")));
+        assertEq({"query0": 2, "query1": 1},
+            ds.exec(sql("update T set name = name where id < 3; update T set name = name where id = 3")));
+        # a row count of 0 is skipped, so one value is left, which is returned as it is
+        assertEq(1, ds.exec(sql("update T set name = name where id = 99; update T set name = name where id = 3")));
+        # an empty result set is kept
+        assertEq({"query0": {"id": (1,)}, "query1": {}},
+            ds.exec(sql("select id from T where id = 1; select id from T where id = 99")));
     }
 
-    testEmptyResultSets() {
-        setUp();
+    laterErrorTest() {
+        checkConnection();
 
-        # One result set has rows, another is empty
-        string sql = "SELECT id FROM multi_rs_test WHERE id = 1; SELECT id FROM multi_rs_test WHERE id = 999; SELECT id FROM multi_rs_test WHERE id = 2";
-        auto results = ds.select(sql);
+        # the error of the second statement, after a result set
+        string err_sql = sql("select id from T where id = 1; insert into T values (1, 'dup')");
+        foreach string call in ("exec", "execRaw", "select", "selectTyped", "selectRows", "selectRowsTyped",
+                "selectRow", "selectColumnar") {
+            assertThrows("TDS-EXEC-ERROR", "duplicate key", sub () {
+                call_object_method(ds, call, err_sql);
+            }, NOTHING, call);
+            ds.rollback();
+            checkConnectionUsable(call);
+        }
 
-        assertTrue(results.size() > 0, "got results including empty set");
+        # the error of the second of three statements; the first and third have been executed when it is raised
+        string mid_sql = sql("insert into T values (4, 'four'); insert into T values (1, 'dup'); "
+            "insert into T values (5, 'five')");
+        foreach string call in ("exec", "selectRows", "selectRow", "selectColumnar") {
+            assertThrows("TDS-EXEC-ERROR", "duplicate key", sub () {
+                call_object_method(ds, call, mid_sql);
+            }, NOTHING, call);
+            ds.rollback();
+            checkConnectionUsable(call);
+        }
+
+        # SQLStatement: the call that reads the end of the rows raises the error
+        foreach string fetch in ("next", "fetchRows", "fetchColumns", "getOutput", "fetchColumnar") {
+            SQLStatement stmt(ds);
+            on_exit {
+                stmt.close();
+                ds.rollback();
+            }
+            stmt.prepare(err_sql);
+            stmt.exec();
+            assertThrows("TDS-EXEC-ERROR", "duplicate key", \readAll(), (stmt, fetch), "statement " + fetch);
+            # the rows have ended, and the error has been raised once
+            assertFalse(stmt.next(), "statement " + fetch + ": no more rows");
+            stmt.close();
+            ds.rollback();
+            checkConnectionUsable("statement " + fetch);
+        }
     }
 
-    testDifferentColumnCounts() {
-        setUp();
+    #! reads the rows of the statement with the given method
+    /** @return the rows read
+    */
+    private auto readAll(SQLStatement stmt, string fetch) {
+        switch (fetch) {
+            case "next": {
+                list<auto> rows;
+                while (stmt.next()) {
+                    rows += stmt.fetchRow();
+                }
+                return rows;
+            }
+            case "fetchRows": return stmt.fetchRows(-1);
+            case "fetchColumns": return stmt.fetchColumns(-1);
+            case "getOutput": return stmt.getOutput();
+            case "fetchColumnar": return stmt.fetchColumnar(-1);
+        }
+        throw "TEST-ERROR", sprintf("unknown fetch method %y", fetch);
+    }
 
-        # Each result set has different number of columns
-        string sql = "SELECT id FROM multi_rs_test WHERE id = 1; SELECT id, name FROM multi_rs_test WHERE id = 2; SELECT id, name, value FROM multi_rs_test WHERE id = 3";
-        auto results = ds.select(sql);
+    #! RAISERROR in a procedure is reported in a message, not as the failure of a statement
+    procedureErrorTest() {
+        checkConnection();
 
-        assertTrue(results.size() > 0, "got results with different column counts");
+        string err_sql = sql("exec T_err");
+        foreach string call in ("exec", "select", "selectRows", "selectRow", "selectColumnar") {
+            assertThrows("TDS-SERVER-ERROR", "qore multiple results failure", sub () {
+                call_object_method(ds, call, err_sql);
+            }, NOTHING, call);
+            ds.rollback();
+            checkConnectionUsable(call);
+        }
+
+        foreach string fetch in ("next", "fetchRows", "fetchColumns", "getOutput", "fetchColumnar") {
+            SQLStatement stmt(ds);
+            on_exit {
+                stmt.close();
+                ds.rollback();
+            }
+            stmt.prepare(err_sql);
+            stmt.exec();
+            assertThrows("TDS-SERVER-ERROR", "qore multiple results failure", \readAll(), (stmt, fetch),
+                "statement " + fetch);
+            stmt.close();
+            ds.rollback();
+            checkConnectionUsable("statement " + fetch);
+        }
+    }
+
+    oneResultSetTest() {
+        checkConnection();
+        on_exit ds.rollback();
+
+        list<hash<auto>> rows = (
+            {"id": 1},
+            {"id": 2},
+            {"id": 3},
+        );
+        foreach string s in (sql("update T set name = name where id < 3; select id from T order by id"),
+                sql("select id from T order by id; update T set name = name where id < 3")) {
+            assertEq(rows, ds.selectRows(s), s);
+            assertEq(rows, ds.selectRowsTyped(s), s);
+            ColumnarResult cr = ds.selectColumnar(s);
+            assertEq(3, cr.numRows(), s);
+            assertEq((1, 2, 3), cr.getColumn("id").toList(), s);
+        }
+        assertEq({"id": 2}, ds.selectRow(sql("update T set name = name where id < 3; select id from T where id = 2")));
+        assertEq({"id": 2}, ds.selectRow(sql("select id from T where id = 2; update T set name = name where id < 3")));
+        # selectRow() still rejects a second row
+        assertThrows("DBI-SELECT-ROW-ERROR", "returned more than 1 row", \ds.selectRow(),
+            sql("update T set name = name where id < 3; select id from T"));
+    }
+
+    multipleResultSetsTest() {
+        checkConnection();
+        on_exit ds.rollback();
+
+        foreach string s in (sql("select id from T where id = 1; select name from T where id = 2"),
+                # the second result set is empty
+                sql("select id from T where id = 1; select id from T where id = 99"),
+                # a row count between them
+                sql("select id from T where id = 1; update T set name = name; select name from T where id = 2"),
+                sql("exec T_two")) {
+            assertThrows("TDS-MULTIPLE-RESULT-SETS-ERROR", "^SQL passed to selectRows\\(\\) " + MultipleResultSets,
+                \ds.selectRows(), s, "selectRows: " + s);
+            assertThrows("TDS-MULTIPLE-RESULT-SETS-ERROR", "^SQL passed to selectRows\\(\\) " + MultipleResultSets,
+                \ds.selectRowsTyped(), s, "selectRowsTyped: " + s);
+            assertThrows("TDS-MULTIPLE-RESULT-SETS-ERROR", "^SQL passed to selectRow\\(\\) " + MultipleResultSets,
+                \ds.selectRow(), s, "selectRow: " + s);
+            assertThrows("TDS-MULTIPLE-RESULT-SETS-ERROR",
+                "^SQL passed to selectColumnar\\(\\) " + MultipleResultSets, \ds.selectColumnar(), s,
+                "selectColumnar: " + s);
+            ds.rollback();
+            checkConnectionUsable(s);
+        }
+    }
+
+    noResultSetTest() {
+        checkConnection();
+        on_exit ds.rollback();
+
+        # as for a single statement, the row count is returned; with several, their total
+        string s = sql("update T set name = name where id < 3; update T set name = name where id = 3");
+        assertEq(3, ds.selectRows(s));
+        assertEq(3, ds.selectRowsTyped(s));
+        assertThrows("DBI-SELECT-ROW-ERROR", "returned type 'integer'", \ds.selectRow(), s);
+        assertThrows("COLUMNAR-RESULT-ERROR", "requires an SQL statement returning result columns",
+            \ds.selectColumnar(), s);
+        # as for a single statement, a total of 0 returns nothing
+        s = sql("update T set name = name where id = 99; update T set name = name where id = 98");
+        assertNothing(ds.selectRows(s));
+        assertNothing(ds.selectRow(s));
+        # a single statement
+        assertEq(2, ds.selectRows(sql("update T set name = name where id < 3")));
+        assertNothing(ds.selectRows(sql("update T set name = name where id = 99")));
+    }
+
+    #! a procedure without a result set returns a return status, which is not a result set
+    statusBeforeResultSetTest() {
+        checkConnection();
+        on_exit ds.rollback();
+
+        string s = sql("exec T_noop; select id from T where id = 1");
+        assertEq(({"id": 1},), ds.selectRows(s));
+        assertEq({"id": 1}, ds.selectRow(s));
+        ColumnarResult cr = ds.selectColumnar(s);
+        assertEq((1,), cr.getColumn("id").toList());
+
+        SQLStatement stmt(ds);
+        on_exit stmt.close();
+        stmt.prepare(s);
+        assertEq(({"id": 1},), stmt.fetchRows(-1));
+        stmt.exec();
+        assertEq({"id": (1,)}, stmt.getOutput());
+    }
+
+    statementTest() {
+        checkConnection();
+        SQLStatement stmt(ds);
+        on_exit {
+            stmt.close();
+            ds.rollback();
+        }
+
+        # the statement is positioned on its result set, after the row count before it
+        stmt.prepare(sql("update T set name = name where id < 3; select id from T order by id"));
+        stmt.exec();
+        assertEq(2, stmt.affectedRows());
+        list<auto> ids;
+        while (stmt.next()) {
+            ids += stmt.fetchRow().id;
+        }
+        assertEq((1, 2, 3), ids);
+        # after the end, no more rows are returned
+        assertFalse(stmt.next());
+        assertNothing(stmt.fetchRow());
+
+        # the row count after the result set is added when the rows have been read
+        stmt.prepare(sql("select id from T order by id; update T set name = name where id < 3"));
+        stmt.exec();
+        assertEq(-1, stmt.affectedRows());
+        assertEq({"id": (1, 2, 3)}, stmt.getOutput());
+        assertEq(2, stmt.affectedRows());
+        # fetching after the end returns no rows
+        assertEq({}, stmt.getOutput());
+
+        # the rows are read in blocks; the block that reaches the end reads the results after it
+        stmt.prepare(sql("select id from T order by id; select name from T where id = 2"));
+        stmt.exec();
+        assertEq({"id": (1, 2)}, stmt.fetchColumns(2));
+        assertThrows("TDS-MULTIPLE-RESULT-SETS-ERROR", MultipleResultSets, \stmt.fetchColumns(), 2);
+        assertEq({}, stmt.fetchColumns(2));
+
+        # the statement can be executed again
+        stmt.prepare(sql("select id from T where id = 3; update T set name = name where id < 3"));
+        for (int i = 0; i < 2; ++i) {
+            stmt.exec();
+            assertEq(({"id": 3},), stmt.fetchRows(-1), "execution " + i);
+        }
+    }
+
+    statementMultipleTest() {
+        checkConnection();
+
+        foreach string s in (sql("select id from T where id = 1; select name from T where id = 2"),
+                sql("select id from T where id = 1; select id from T where id = 99"),
+                sql("exec T_two")) {
+            foreach string fetch in ("next", "fetchRows", "fetchColumns", "getOutput", "fetchColumnar") {
+                SQLStatement stmt(ds);
+                on_exit {
+                    stmt.close();
+                    ds.rollback();
+                }
+                stmt.prepare(s);
+                stmt.exec();
+                assertThrows("TDS-MULTIPLE-RESULT-SETS-ERROR",
+                    "^the SQL executed by SQLStatement " + MultipleResultSets, \readAll(), (stmt, fetch),
+                    fetch + ": " + s);
+                # the rows of the second result set are not returned
+                assertFalse(stmt.next(), fetch + ": " + s);
+                stmt.close();
+                ds.rollback();
+                checkConnectionUsable(fetch + ": " + s);
+            }
+        }
+    }
+
+    statementRowCountTest() {
+        checkConnection();
+        SQLStatement stmt(ds);
+        on_exit {
+            stmt.close();
+            ds.rollback();
+            ds.exec("set nocount off");
+        }
+
+        # the total of all row counts
+        stmt.prepare(sql("update T set name = name where id < 3; update T set name = name where id = 3"));
+        stmt.exec();
+        assertEq(3, stmt.affectedRows());
+        assertFalse(stmt.next());
+
+        # a single statement
+        stmt.prepare(sql("update T set name = name where id < 3"));
+        stmt.exec();
+        assertEq(2, stmt.affectedRows());
+        stmt.prepare(sql("update T set name = name where id = 99"));
+        stmt.exec();
+        assertEq(0, stmt.affectedRows());
+
+        # a procedure: its row count, after its return status
+        stmt.prepare(sql("exec T_upd"));
+        stmt.exec();
+        assertEq(2, stmt.affectedRows());
+        assertFalse(stmt.next());
+
+        # no row count reported
+        stmt.prepare("create table #qore_mr_tmp (x int)");
+        stmt.exec();
+        assertEq(-1, stmt.affectedRows());
+        ds.exec("set nocount on");
+        stmt.prepare(sql("update T set name = name where id < 3; update T set name = name where id = 3"));
+        stmt.exec();
+        assertEq(-1, stmt.affectedRows());
+    }
+
+    #! results after rows that are not read to the end are discarded, with their errors
+    statementAbandonTest() {
+        checkConnection();
+        on_exit ds.rollback();
+
+        foreach string s in (sql("select id from T order by id; insert into T values (1, 'dup')"),
+                sql("exec T_err")) {
+            {
+                SQLStatement stmt(ds);
+                on_exit stmt.close();
+                stmt.prepare(s);
+                stmt.exec();
+                assertTrue(stmt.next(), s);
+                assertEq(1, stmt.fetchRow().id, s);
+                # another call cancels the statement; the error after its rows is not raised by that call
+                checkConnectionUsable(s);
+                assertThrows("STATEMENT-CONNECTION-ERROR", \stmt.next());
+            }
+            ds.rollback();
+            {
+                SQLStatement stmt(ds);
+                stmt.prepare(s);
+                stmt.exec();
+                assertTrue(stmt.next(), s);
+                stmt.close();
+            }
+            # closing the statement discards its results and their errors
+            checkConnectionUsable(s);
+            ds.rollback();
+        }
     }
 }

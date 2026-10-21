@@ -218,7 +218,7 @@ command* connection::setupCommand(const QoreString* cmd_text, const QoreListNode
 }
 
 QoreValue connection::execReadOutput(QoreString* cmd_text, const QoreListNode* qore_args, bool need_list,
-        bool doBinding, bool cols, ExceptionSink* xsink, bool single_row) {
+        bool doBinding, bool cols, ExceptionSink* xsink, bool single_row, const char* only_result_set) {
     // cancel any active statement
     invalidateStatement();
 
@@ -236,7 +236,8 @@ QoreValue connection::execReadOutput(QoreString* cmd_text, const QoreListNode* q
     ValueHolder result(xsink);
 
     while (true) {
-        result = cmd->readOutput(*this, *cmd.get(), need_list, connection_reset, cols, xsink, single_row);
+        result = cmd->readOutput(*this, *cmd.get(), need_list, connection_reset, cols, xsink, single_row,
+            only_result_set);
         if (*xsink)
             return QoreValue();
 
@@ -425,6 +426,9 @@ QoreColumnarResult* connection::selectColumnar(const QoreString *cmd, const Qore
         return nullptr;
     }
 
+    // the call returns one result set: row counts, return status and output parameter results are skipped, and the
+    // results after the result set are read, so that the error of a later statement is raised
+    ReferenceHolder<QoreColumnarResult> rv(xsink);
     bool connection_reset = false;
     while (true) {
         command::ResType rt = readNextResult(*sql_command, connection_reset, xsink);
@@ -434,21 +438,29 @@ QoreColumnarResult* connection::selectColumnar(const QoreString *cmd, const Qore
         }
 
         switch (rt) {
-            case command::RES_ROW: {
-                ReferenceHolder<QoreColumnarResult> rv(sql_command->read_columnar(nullptr, -1, xsink), xsink);
+            case command::RES_ROW:
+                rv = sql_command->read_columnar(nullptr, -1, xsink);
+                if (*xsink) {
+                    purge_messages(xsink);
+                    return nullptr;
+                }
+                if (sql_command->finish_results(*this, "SQL passed to selectColumnar()", xsink)) {
+                    purge_messages(xsink);
+                    return nullptr;
+                }
                 purge_messages(xsink);
                 return rv.release();
-            }
 
             case command::RES_DONE:
                 continue;
 
             case command::RES_STATUS:
             case command::RES_PARAM:
-                xsink->raiseException("COLUMNAR-RESULT-ERROR",
-                    "Datasource::selectColumnar() requires an SQL statement returning result columns");
-                purge_messages(xsink);
-                return nullptr;
+                if (sql_command->skip_result(xsink)) {
+                    purge_messages(xsink);
+                    return nullptr;
+                }
+                continue;
 
             case command::RES_END:
                 xsink->raiseException("COLUMNAR-RESULT-ERROR",
@@ -498,7 +510,8 @@ QoreValue connection::exec_rows(const QoreString *cmd, const QoreListNode *param
         return QoreValue();
 
     std::unique_ptr<QoreString> tmp(query);
-    ValueHolder rv(execReadOutput(query, parameters, true, true, false, xsink), xsink);
+    ValueHolder rv(execReadOutput(query, parameters, true, true, false, xsink, false, "SQL passed to selectRows()"),
+        xsink);
     purge_messages(xsink);
     return rv.release();
 }
@@ -511,7 +524,8 @@ QoreValue connection::exec_row(const QoreString *cmd, const QoreListNode *parame
     }
 
     std::unique_ptr<QoreString> tmp(query);
-    ValueHolder rv(execReadOutput(query, parameters, true, true, false, xsink, true), xsink);
+    ValueHolder rv(execReadOutput(query, parameters, true, true, false, xsink, true, "SQL passed to selectRow()"),
+        xsink);
     purge_messages(xsink);
     return rv.release();
 }

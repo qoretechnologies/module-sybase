@@ -71,9 +71,8 @@ Sybase Client-Library/15.0/P-EBF13571 ESD #4/DRV.15.0.1/Linux x86_64/Linux 2.4.2
     @ref Qore::SQL::Datasource::selectRows() "Datasource::selectRows()", and
     @ref Qore::SQL::Datasource::exec() "Datasource::exec()" (and related methods), however rules about
     @ref Qore::SQL::Datasource "Datasource" locking or @ref Qore::SQL::DatasourcePool "DatasourcePool" allocations
-    still apply as usual. If a stored procedure is executed with
-    @ref Qore::SQL::Datasource::selectRows() "Datasource::selectRows()", then any query results returned will be
-    returned in either a hash format (if only one row was returned), or as a list of hashes (for multiple rows).
+    still apply as usual.  A stored procedure can be executed with any of them; see @ref sybase_multiple_results for
+    procedures and other SQL that return more than one result.
 
     The TDS protocol only supports a single active query on a connection at one time, therefore there can be only one
     @ref Qore::SQL::SQLStatement "SQLStatement" object active at any one time on a single server connection; if
@@ -81,21 +80,71 @@ Sybase Client-Library/15.0/P-EBF13571 ESD #4/DRV.15.0.1/Linux x86_64/Linux 2.4.2
     @ref Qore::SQL::SQLStatement "SQLStatement" is active, the existing statement will be canceled before starting the
     new statement.
 
-    Unlike many other Qore DBI drivers, this driver allows and can return results from multiple select statements
-    issued with a single call. Additionally, it's possible for a stored procedure to return output paramters as well
-    as one or more result sets from select statements. The output format for commands like this differs from standard
-    Qore DBI formats as follows:
+    @section sybase_multiple_results Multiple Results
+
+    SQL can return more than one result: a batch of several statements, or a stored procedure, which returns its
+    result sets and row counts followed by a return status.  The driver reads every result:
+    - if any statement fails, its error is raised (\c TDS-EXEC-ERROR, or \c TDS-SERVER-ERROR for an error that the
+      server reports in a message only, such as \c RAISERROR in a stored procedure), and the remaining results are
+      discarded; statements that the server executed before or after it are part of the current transaction, so roll
+      it back
+    - return status results are not returned, and the row count reported at the end of a result set (the number of
+      rows selected) is not a separate result
+    - SQL that returns exactly one result behaves as a single statement always has
+
+    |!Call|!More than one result
+    |@ref Qore::SQL::Datasource::exec() "Datasource::exec()", \
+        @ref Qore::SQL::Datasource::execRaw() "Datasource::execRaw()", \
+        @ref Qore::SQL::Datasource::select() "Datasource::select()", \
+        @ref Qore::SQL::Datasource::selectTyped() "Datasource::selectTyped()"|Each result set is returned as a hash \
+        of column lists, each row count greater than 0 as an integer; row counts of 0 or less are skipped.  If more \
+        than one value is left, they are returned in a hash with keys <tt>query</tt><i>#</i> (\c query0, \c query1, \
+        ...) in order; one value is returned as it is, as for a single statement, and no value as for a single \
+        statement that returns none.  \c selectTyped() returns several results as \c select() does.
+    |@ref Qore::SQL::Datasource::selectRows() "Datasource::selectRows()", \
+        @ref Qore::SQL::Datasource::selectRowsTyped() "Datasource::selectRowsTyped()", \
+        @ref Qore::SQL::Datasource::selectRow() "Datasource::selectRow()", \
+        @ref Qore::SQL::Datasource::selectColumnar() "Datasource::selectColumnar()"|Row counts are skipped and the \
+        only result set is returned.  A second result set raises \c TDS-MULTIPLE-RESULT-SETS-ERROR, for example \
+        "SQL passed to selectRows() returned more than one result set; use select() or exec()".  Without a result \
+        set, the call behaves as for a single statement that returns none: \c selectRows() and \
+        \c selectRowsTyped() return the total row count if it is greater than 0, \c selectRow() raises \
+        \c DBI-SELECT-ROW-ERROR for it, and \c selectColumnar() raises \c COLUMNAR-RESULT-ERROR.
+    |@ref Qore::SQL::SQLStatement "SQLStatement"|@ref Qore::SQL::SQLStatement::exec() "SQLStatement::exec()" \
+        reads the row counts and return status results before the first result set, raising the error of a failing \
+        statement; without a result set, it reads every result.  \
+        @ref Qore::SQL::SQLStatement::affectedRows() "SQLStatement::affectedRows()" returns the total of the row \
+        counts read so far, or -1 if the server reported none.  The statement returns one result set: when it has \
+        been read to the end (\c next() returns \c False, or a fetch method or \c getOutput() reads the last row), \
+        the remaining results are read, so that call raises the error of a later failing statement and adds the \
+        later row counts, and a second result set raises \c TDS-MULTIPLE-RESULT-SETS-ERROR ("the SQL executed by \
+        SQLStatement returned more than one result set; use select() or exec()").  Results after rows that are not \
+        read to the end are discarded with their errors when the statement is closed or executed again, or when \
+        another call is made on the connection.
+
+    @par Example:
+    @code{.py}
+# returns {"query0": 2, "query1": {"id": (1, 2, 3)}}
+auto rv = db.exec("update t set flag = 1 where id < 3; select id from t order by id");
+
+# the row count is skipped; returns ({"id": 1}, {"id": 2}, {"id": 3})
+list<hash<auto>> rows = db.selectRows("update t set flag = 1 where id < 3; select id from t order by id");
+    @endcode
+
+    Output parameters of a stored procedure are returned by \c exec() and \c select() as follows (see
+    @ref sybasestoredprocsguide):
 
     |!Query Type|!Result Format
-    |Multiple Selects|A hash is returned with a key giving the results from each select statement. The key names \
-        have the format <tt>query</tt><i>#</i>, where \a # is an increasing integer starting with 0.
     |Return Parameters Only|A hash is returned with keys giving the output parameter values, as long as the \
         placeholder format (ex: \c :name) was used for the output parameters, otherwise the key names in the output \
-        will be an increasing integer starting with 0 (i.e. 0, 1, etc). If a count of affected rows is available, \
-        it's returned in the \c rowcount key.
-    |Return Parameters and Result Set(s)|As above, but with an addition key: \c query, giving the result set. If \
-        multiple result sets are returned, then the \c query key will be a hash with \c query# keys giving the \
-        results for each query in order.
+        will be an increasing integer starting with 0 (i.e. 0, 1, etc).
+    |Return Parameters and Other Results|A hash is returned with keys \c params, giving the output parameter \
+        values as above, and \c query, giving the other results (result sets and row counts) as described above.
+
+    Server notes:
+    - Microsoft SQL Server reports no row counts after <tt>SET NOCOUNT ON</tt>, which applies to the connection
+      until it is turned off
+    - for a stored procedure, the row count reported after its return status is included as any other row count
 
     @section sybasedocumentation Documentation
 

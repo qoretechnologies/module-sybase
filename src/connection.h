@@ -219,7 +219,12 @@ public:
     DLLLOCAL int bulkLoadEnd(bool success, ExceptionSink* xsink);
 #endif
 
-    DLLLOCAL QoreValue execReadOutput(QoreString *cmd_text, const QoreListNode *qore_args, bool need_list, bool doBinding, bool cols, ExceptionSink* xsink, bool single_row = false);
+    //! executes the SQL and reads every result
+    /** @param only_result_set if not null, the call returns one result set (see command::readOutput())
+    */
+    DLLLOCAL QoreValue execReadOutput(QoreString *cmd_text, const QoreListNode *qore_args, bool need_list,
+            bool doBinding, bool cols, ExceptionSink* xsink, bool single_row = false,
+            const char* only_result_set = nullptr);
     DLLLOCAL command::ResType readNextResult(command& cmd, bool& connection_reset, ExceptionSink* xsink);
 
     DLLLOCAL QoreValue select(const QoreString *cmd, const QoreListNode *parameters, ExceptionSink *xsink);
@@ -241,6 +246,11 @@ public:
         if (stmt) {
             stmt->invalidate();
             stmt = nullptr;
+            // the messages of the statement's results that were not read are discarded with them, so that they are
+            // not raised by the next call
+            if (m_connection) {
+                discard_messages();
+            }
         }
     }
 

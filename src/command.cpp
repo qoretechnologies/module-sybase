@@ -28,6 +28,7 @@
 #include <cstypes.h>
 
 #include <cerrno>
+#include <climits>
 #include <cctype>
 #include <cstring>
 #include <memory>
@@ -519,6 +520,10 @@ void command::initiate_language_command(const char* cmd_text, ExceptionSink* xsi
 }
 
 bool command::fetch_row_into_buffers(ExceptionSink* xsink) {
+   // every result has been read or discarded: there are no more rows, and ct_fetch() must not be called
+   if (results_read()) {
+      return false;
+   }
    CS_INT rows_read;
    CS_RETCODE err;
    {
@@ -767,6 +772,82 @@ int command::get_row_count() {
     return rowcount;
 }
 
+int command::get_affected_rows() const {
+    if (!rowcount_reported) {
+        return -1;
+    }
+    // the total cannot be negative: only row counts >= 0 are added
+    assert(total_rowcount >= 0);
+    return total_rowcount > INT_MAX ? INT_MAX : static_cast<int>(total_rowcount);
+}
+
+void command::raise_multiple_result_sets(const char* desc, ExceptionSink* xsink) {
+    assert(desc);
+    xsink->raiseException("TDS-MULTIPLE-RESULT-SETS-ERROR", "%s returned more than one result set; use select() or "
+        "exec()", desc);
+}
+
+int command::skip_result(ExceptionSink* xsink) {
+    assert(lastRes == RES_STATUS || lastRes == RES_PARAM);
+    // the rows are fetched into buffers of their own, so the columns of the result set read before are kept
+    unsigned columns = get_column_count(xsink);
+    if (*xsink) {
+        return -1;
+    }
+    row_result_t desc;
+    if (get_row_description(desc, columns, xsink)) {
+        return -1;
+    }
+    row_output_buffers buffers;
+    if (setup_output_buffers(desc, buffers, xsink)) {
+        return -1;
+    }
+    int row_count = 0;
+    while (fetch_row_into_buffers(xsink)) {
+        if (!(++row_count % 100) && qore_check_cancel(xsink)) {
+            return -1;
+        }
+    }
+    return *xsink ? -1 : 0;
+}
+
+int command::finish_results(connection& conn, const char* desc, ExceptionSink* xsink) {
+    bool connection_reset = false;
+    while (true) {
+        // read_next_result() checks for a program interrupt before reading each result
+        ResType rt = conn.readNextResult(*this, connection_reset, xsink);
+        if (*xsink) {
+            return -1;
+        }
+        assert(!connection_reset);
+
+        switch (rt) {
+            case RES_DONE:
+                // the row count has been added to the total
+                continue;
+
+            case RES_STATUS:
+            case RES_PARAM:
+                if (skip_result(xsink)) {
+                    return -1;
+                }
+                continue;
+
+            case RES_ROW:
+                raise_multiple_result_sets(desc, xsink);
+                return -1;
+
+            case RES_END:
+                return 0;
+
+            default:
+                // the command was canceled; there are no more results
+                assert(rt == RES_CANCELED);
+                return 0;
+        }
+    }
+}
+
 command::ResType command::read_next_result1(bool& disconnect, ExceptionSink* xsink) {
     if (*xsink)
         return RES_ERROR;
@@ -845,6 +926,14 @@ command::ResType command::read_next_result1(bool& disconnect, ExceptionSink* xsi
                 return RES_ERROR;
             }
 
+            // the row count at the end of a result set is the number of rows selected; it is not an affected row
+            // count
+            if (!after_result && rowcount >= 0) {
+                total_rowcount += rowcount;
+                rowcount_reported = true;
+            }
+            after_result = false;
+
             colinfo.set_dirty();
             return RES_DONE;
         }
@@ -858,10 +947,12 @@ command::ResType command::read_next_result1(bool& disconnect, ExceptionSink* xsi
             return RES_ERROR;
 
         case CS_PARAM_RESULT:
+            after_result = true;
             return RES_PARAM;
         case CS_STATUS_RESULT:
             return RES_STATUS;
         case CS_ROW_RESULT:
+            after_result = true;
             return RES_ROW;
     }
 
@@ -869,10 +960,13 @@ command::ResType command::read_next_result1(bool& disconnect, ExceptionSink* xsi
     return RES_ERROR;
 }
 
-QoreValue command::readOutput(connection& conn, command& cmd, bool list, bool& connection_reset, bool cols, ExceptionSink* xsink, bool single_row) {
+QoreValue command::readOutput(connection& conn, command& cmd, bool list, bool& connection_reset, bool cols,
+        ExceptionSink* xsink, bool single_row, const char* only_result_set) {
     ValueHolder qresult(xsink);
 
     ss::ResultFactory rf(xsink);
+    // true when a result set has been read by a call that returns one result set
+    bool have_result_set = false;
 
     while (true) {
         ResType rt = conn.readNextResult(cmd, connection_reset, xsink);
@@ -892,15 +986,34 @@ QoreValue command::readOutput(connection& conn, command& cmd, bool list, bool& c
                 break;
 
             case RES_ROW:
+                if (only_result_set) {
+                    if (have_result_set) {
+                        // the remaining results are discarded when the command is destroyed
+                        raise_multiple_result_sets(only_result_set, xsink);
+                        return QoreValue();
+                    }
+                    have_result_set = true;
+                }
                 qresult = read_rows(0, list, cols, xsink, single_row);
                 rf.add(qresult, list);
                 break;
 
             case RES_END:
+                // without a result set, a call returning one result set returns the total row count, as for a
+                // single statement
+                if (only_result_set && !have_result_set) {
+                    int count = get_affected_rows();
+                    if (count > 0) {
+                        rf.add(QoreValue(count));
+                    }
+                }
                 return rf.res();
 
             case RES_DONE:
-                rf.done(rowcount);
+                // a call returning one result set skips the row counts
+                if (!only_result_set) {
+                    rf.done(rowcount);
+                }
                 continue;
 
             case RES_STATUS:
@@ -1136,11 +1249,12 @@ int command::get_row_description(row_result_t &result, unsigned column_count, Ex
     return 0;
 }
 
-int command::setup_output_buffers(const row_result_t &input_row_descriptions, ExceptionSink *xsink) {
-    out_buffers.reset();
+int command::setup_output_buffers(const row_result_t& input_row_descriptions, row_output_buffers& buffers,
+        ExceptionSink* xsink) {
+    buffers.reset();
     for (unsigned i = 0, n = input_row_descriptions.size(); i != n; ++i) {
         unsigned size = input_row_descriptions[i].maxlength;
-        output_value_buffer *out = out_buffers.insert(size);
+        output_value_buffer *out = buffers.insert(size);
 
         CS_RETCODE err = ct_bind(m_cmd, i + 1,
                                 (CS_DATAFMT*)&input_row_descriptions[i],

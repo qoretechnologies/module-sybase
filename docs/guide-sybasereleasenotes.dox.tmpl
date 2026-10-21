@@ -13,6 +13,27 @@
       BCP loads
 
     <b>Bug Fixes</b>
+    - every result of SQL that returns more than one result, such as a batch of statements or a stored procedure,
+      is read, and the error of any statement is raised by the call that reads it (see @ref sybase_multiple_results):
+      - @ref Qore::SQL::Datasource::selectRows() "Datasource::selectRows()",
+        @ref Qore::SQL::Datasource::selectRowsTyped() "Datasource::selectRowsTyped()" and
+        @ref Qore::SQL::Datasource::selectRow() "Datasource::selectRow()" skip row counts and return the only result
+        set; they returned every result in a hash with keys \c query0, \c query1, ..., which
+        \c selectRow() returned as if it were the row; a second result set raises
+        \c TDS-MULTIPLE-RESULT-SETS-ERROR
+      - @ref Qore::SQL::Datasource::selectColumnar() "Datasource::selectColumnar()" returned the first result set and
+        did not read the results after it, so a second result set was ignored and the error of a later statement was
+        raised by the next call on the connection, or not at all; it skips return status results before the result
+        set, which raised an error
+      - a @ref Qore::SQL::SQLStatement "SQLStatement" read only its first result: when its rows have been read, it
+        reads the remaining results and raises the error of a later statement, which was raised by the next call on
+        the connection, or not at all; a second result set raises \c TDS-MULTIPLE-RESULT-SETS-ERROR; the return
+        status of a stored procedure before its result set is skipped, so the rows of the result set are returned
+      - @ref Qore::SQL::SQLStatement::affectedRows() "SQLStatement::affectedRows()" returns the total of the row
+        counts; it returned the last one, and -1 for a stored procedure
+      - the results of a @ref Qore::SQL::SQLStatement "SQLStatement" that are not read are discarded with their
+        errors when it is closed or executed again or when another call is made on the connection; such an error was
+        raised by the next call
     - fixed a crash of an optimized build when a statement could not be prepared, for example because of an
       invalid placeholder: the command that was not created was destroyed, and the process crashed instead of raising
       the exception; destroying a command also no longer throws an exception when it cannot be canceled

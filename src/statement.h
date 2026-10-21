@@ -67,16 +67,43 @@ class Statement : public EmptyStatement {
     SafePtr<command> context;
     Placeholders placeholders;
     bool valid;
+    //! true when every result of the execution has been read
+    bool results_done = false;
+
+    //! reads the results after the statement's result set when its rows have been read to the end
+    /** @return 0 = OK, -1 = error (exception raised)
+    */
+    DLLLOCAL int finishIfEnded(SQLStatement* stmt, ExceptionSink* xsink) {
+        if (results_done || !context->result_ended()) {
+            return 0;
+        }
+        return finishResults(stmt, xsink);
+    }
+
+    //! reads the row count and return status results before the first result set
+    /** without a result set, every result is read
+
+        @return 0 = OK, -1 = error (exception raised)
+    */
+    DLLLOCAL int positionOnResultSet(connection* conn, ExceptionSink* xsink);
+
+    //! reads the results after the statement's result set
+    /** row counts are added to the affected row count, the error of a later statement is raised, and another result
+        set raises \c TDS-MULTIPLE-RESULT-SETS-ERROR; on error the remaining results are discarded
+
+        @return 0 = OK, -1 = error (exception raised)
+    */
+    DLLLOCAL int finishResults(SQLStatement* stmt, ExceptionSink* xsink);
+
+    //! discards the results that have not been read, with their messages
+    DLLLOCAL void discardResults(connection& conn);
+
 public:
     typedef connection Connection;
 
     Statement() : _execRes(0), valid(true) {}
 
-    static void Delete(Statement *self, ExceptionSink* xsink) {
-        if (!self) return;
-        self->set_res(0, xsink);
-        delete self;
-    }
+    DLLLOCAL static void Delete(Statement *self, ExceptionSink* xsink);
 
     DLLLOCAL void invalidate() {
         assert(valid);
@@ -125,13 +152,21 @@ public:
 
             reslist->push(h.release(), xsink);
         } while (next(stmt, xsink));
+        // the error of a later statement is raised when the end of the rows is reached
+        if (*xsink) {
+            return nullptr;
+        }
         return reslist.release();
     }
 
     QoreHashNode* get_output(SQLStatement* stmt, ExceptionSink* xsink) {
         if (checkValid(xsink))
            return 0;
-        return context->read_cols(&placeholders, false, xsink);
+        ReferenceHolder<QoreHashNode> rv(context->read_cols(&placeholders, false, xsink), xsink);
+        if (*xsink || finishIfEnded(stmt, xsink)) {
+            return nullptr;
+        }
+        return rv.release();
     }
 
     int affected_rows(SQLStatement* stmt, ExceptionSink* xsink);
@@ -139,14 +174,22 @@ public:
     QoreHashNode* fetch_columns(SQLStatement* stmt, int rows, ExceptionSink* xsink) {
         if (checkValid(xsink))
            return 0;
-        return context->read_cols(0, rows, false, xsink);
+        ReferenceHolder<QoreHashNode> rv(context->read_cols(0, rows, false, xsink), xsink);
+        if (*xsink || finishIfEnded(stmt, xsink)) {
+            return nullptr;
+        }
+        return rv.release();
     }
 
 #ifdef HAVE_QORE_COLUMNAR_RESULT
     QoreColumnarResult* fetch_columnar(SQLStatement* stmt, int rows, ExceptionSink* xsink) {
         if (checkValid(xsink))
            return 0;
-        return context->read_columnar(0, rows, xsink);
+        ReferenceHolder<QoreColumnarResult> rv(context->read_columnar(0, rows, xsink), xsink);
+        if (*xsink || finishIfEnded(stmt, xsink)) {
+            return nullptr;
+        }
+        return rv.release();
     }
 #endif
 
