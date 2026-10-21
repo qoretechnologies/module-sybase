@@ -1047,35 +1047,202 @@ int command::retr_colinfo(ExceptionSink* xsink) {
     return 0;
 }
 
-void command::setupColumns(QoreHashNode& h, const Placeholders *ph) {
-    row_result_t &descriptions = colinfo.datafmt;
+std::string command::get_column_name(size_t i, const Placeholders* ph) const {
+    const row_result_t& descriptions = colinfo.datafmt;
+    assert(i < descriptions.size());
+    if (ss::is_empty(descriptions[i].name)) {
+        return get_placeholder_at(ph, i);
+    }
+    std::string col_name = descriptions[i].name;
+    std::transform(col_name.begin(), col_name.end(), col_name.begin(), ::tolower);
+    return col_name;
+}
 
-    for (unsigned i = 0, n = descriptions.size(); i != n; ++i) {
-        std::string col_name;
-
-        if (!ss::is_empty(descriptions[i].name)) {
-            col_name = descriptions[i].name;
-            std::transform(col_name.begin(), col_name.end(), col_name.begin(), ::tolower);
-        } else {
-            col_name = get_placeholder_at(ph, i);
-        }
-
-        HashAssignmentHelper hah(h, col_name);
-        if (*hah) {
-            // find a unique column name
-            unsigned num = 1;
-            while (true) {
-                QoreStringMaker tmp("%s_%d", col_name.c_str(), num);
-                hah.reassign(tmp.c_str());
-                if (*hah) {
+void command::assign_column(QoreHashNode& h, const std::string& col_name, QoreValue value, ExceptionSink* xsink) {
+    HashAssignmentHelper hah(h, col_name);
+    if (*hah) {
+        // find a unique column name
+        unsigned num = 1;
+        while (true) {
+            QoreStringMaker tmp("%s_%d", col_name.c_str(), num);
+            hah.reassign(tmp.c_str());
+            if (*hah) {
                 ++num;
                 continue;
+            }
+            break;
+        }
+    }
+    hah.assign(value, xsink);
+}
+
+void command::setupColumns(QoreHashNode& h, const Placeholders *ph) {
+    for (size_t i = 0, n = colinfo.datafmt.size(); i != n; ++i) {
+        assign_column(h, get_column_name(i, ph), new QoreListNode, nullptr);
+    }
+}
+
+static bool is_number(const CS_DATAFMT_EX& datafmt);
+
+// returns the Client-Library name of a datatype
+static const char* get_native_type_name(int datatype) {
+    switch (datatype) {
+        case CS_CHAR_TYPE: return "char";
+        case CS_VARCHAR_TYPE: return "varchar";
+        case CS_LONGCHAR_TYPE: return "longchar";
+        case CS_TEXT_TYPE: return "text";
+        case CS_UNICHAR_TYPE: return "unichar";
+#ifdef CS_UNITEXT_TYPE
+        case CS_UNITEXT_TYPE: return "unitext";
+#endif
+#ifdef CS_XML_TYPE
+        case CS_XML_TYPE: return "xml";
+#endif
+        case CS_BINARY_TYPE: return "binary";
+        case CS_VARBINARY_TYPE: return "varbinary";
+        case CS_LONGBINARY_TYPE: return "longbinary";
+        case CS_IMAGE_TYPE: return "image";
+        case CS_TINYINT_TYPE: return "tinyint";
+        case CS_SMALLINT_TYPE: return "smallint";
+        case CS_INT_TYPE: return "int";
+#ifdef CS_BIGINT_TYPE
+        case CS_BIGINT_TYPE: return "bigint";
+#endif
+        case CS_REAL_TYPE: return "real";
+        case CS_FLOAT_TYPE: return "float";
+        case CS_BIT_TYPE: return "bit";
+        case CS_DATETIME_TYPE: return "datetime";
+        case CS_DATETIME4_TYPE: return "smalldatetime";
+        case CS_MONEY_TYPE: return "money";
+        case CS_MONEY4_TYPE: return "smallmoney";
+        case CS_NUMERIC_TYPE: return "numeric";
+        case CS_DECIMAL_TYPE: return "decimal";
+#ifdef CS_DATE_TYPE
+        case CS_DATE_TYPE: return "date";
+#endif
+#ifdef CS_TIME_TYPE
+        case CS_TIME_TYPE: return "time";
+#endif
+#ifdef CS_BIGDATETIME_TYPE
+        case CS_BIGDATETIME_TYPE: return "bigdatetime";
+#endif
+#ifdef CS_BIGTIME_TYPE
+        case CS_BIGTIME_TYPE: return "bigtime";
+#endif
+#ifdef CS_UNIQUE_TYPE
+        case CS_UNIQUE_TYPE: return "uniqueidentifier";
+#endif
+    }
+    return "unknown";
+}
+
+QoreHashNode* command::describe(const Placeholders* ph, ExceptionSink* xsink) {
+    ReferenceHolder<QoreHashNode> h(new QoreHashNode(autoTypeInfo), xsink);
+    // every result has been read, and none had columns
+    if (results_read() && colinfo.empty()) {
+        return h.release();
+    }
+    if (ensure_colinfo(xsink)) {
+        return nullptr;
+    }
+
+    const row_result_t& descriptions = colinfo.datafmt;
+    for (size_t i = 0, n = descriptions.size(); i != n; ++i) {
+        if (i && !(i % 100) && qore_check_cancel(xsink, "describing Sybase result columns")) {
+            return nullptr;
+        }
+        const CS_DATAFMT_EX& datafmt = descriptions[i];
+        std::string col_name = get_column_name(i, ph);
+
+        // the type of the values returned, as get_value() converts them
+        qore_type_t type;
+        switch (datafmt.datatype) {
+            case CS_LONGCHAR_TYPE:
+            case CS_VARCHAR_TYPE:
+            case CS_TEXT_TYPE:
+            case CS_CHAR_TYPE:
+                if (is_number(datafmt)) {
+                    switch (m_conn.getNumeric()) {
+                        case connection::OPT_NUM_STRING:
+                            type = NT_STRING;
+                            break;
+                        case connection::OPT_NUM_NUMERIC:
+                            type = NT_NUMBER;
+                            break;
+                        default:
+                            // integral values that fit in 64 bits are returned as integers
+                            type = !datafmt.scale && datafmt.precision > 0 && datafmt.precision <= 18
+                                ? NT_INT
+                                : NT_NUMBER;
+                            break;
+                    }
+                } else {
+                    type = NT_STRING;
                 }
                 break;
-            }
+
+            case CS_VARBINARY_TYPE:
+            case CS_BINARY_TYPE:
+            case CS_LONGBINARY_TYPE:
+            case CS_IMAGE_TYPE:
+                type = NT_BINARY;
+                break;
+
+            case CS_TINYINT_TYPE:
+            case CS_SMALLINT_TYPE:
+            case CS_INT_TYPE:
+#ifdef CS_BIGINT_TYPE
+            case CS_BIGINT_TYPE:
+#endif
+                type = NT_INT;
+                break;
+
+            case CS_REAL_TYPE:
+            case CS_FLOAT_TYPE:
+                type = NT_FLOAT;
+                break;
+
+            case CS_BIT_TYPE:
+                type = NT_BOOLEAN;
+                break;
+
+            case CS_DATETIME_TYPE:
+            case CS_DATETIME4_TYPE:
+#ifdef CS_BIGDATETIME_TYPE
+            case CS_BIGDATETIME_TYPE:
+#endif
+#ifdef CS_BIGTIME_TYPE
+            case CS_BIGTIME_TYPE:
+#endif
+#ifdef CS_DATE_TYPE
+            case CS_DATE_TYPE:
+#endif
+                type = NT_DATE;
+                break;
+
+            default:
+                // a value of this type cannot be returned
+                type = NT_NOTHING;
+                break;
         }
-        hah.assign(new QoreListNode, 0);
+
+        ReferenceHolder<QoreHashNode> desc(new QoreHashNode(autoTypeInfo), xsink);
+        desc->setKeyValue("name", new QoreStringNode(col_name), xsink);
+        desc->setKeyValue("type", static_cast<int64>(type), xsink);
+        desc->setKeyValue("maxsize", static_cast<int64>(datafmt.origin_maxlength), xsink);
+        desc->setKeyValue("native_type", new QoreStringNode(get_native_type_name(datafmt.origin_datatype)), xsink);
+        desc->setKeyValue("internal_id", static_cast<int64>(datafmt.origin_datatype), xsink);
+        desc->setKeyValue("nullable", (datafmt.status & CS_CANBENULL) != 0, xsink);
+        if (is_number(datafmt)) {
+            desc->setKeyValue("precision", static_cast<int64>(datafmt.precision), xsink);
+            desc->setKeyValue("scale", static_cast<int64>(datafmt.scale), xsink);
+        }
+        assign_column(**h, col_name, desc.release(), xsink);
+        if (*xsink) {
+            return nullptr;
+        }
     }
+    return h.release();
 }
 
 QoreHashNode* command::read_cols(const Placeholders* ph, int cnt, bool cols, ExceptionSink* xsink) {
@@ -1190,6 +1357,7 @@ int command::get_row_description(row_result_t &result, unsigned column_count, Ex
             datafmt.name, datafmt.datatype, datafmt.usertype);
 
         datafmt.origin_datatype = datafmt.datatype;
+        datafmt.origin_maxlength = datafmt.maxlength;
         switch (datafmt.datatype) {
             // we map DECIMAL types to strings so we have no conversion to do
             case CS_DECIMAL_TYPE:

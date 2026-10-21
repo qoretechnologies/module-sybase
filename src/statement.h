@@ -161,6 +161,19 @@ public:
         return rv.release();
     }
 
+    //! returns the output as getOutput() does: the module has no output buffers returned as result sets
+    QoreHashNode* get_output_rows(SQLStatement* stmt, ExceptionSink* xsink) {
+        return get_output(stmt, xsink);
+    }
+
+    //! describes the columns of the statement's result set
+    QoreHashNode* describe(SQLStatement* stmt, ExceptionSink* xsink) {
+        if (checkValid(xsink)) {
+            return nullptr;
+        }
+        return context->describe(&placeholders, xsink);
+    }
+
     int affected_rows(SQLStatement* stmt, ExceptionSink* xsink);
 
     QoreHashNode* fetch_columns(SQLStatement* stmt, int rows, ExceptionSink* xsink) {

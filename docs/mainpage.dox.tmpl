@@ -80,6 +80,25 @@ Sybase Client-Library/15.0/P-EBF13571 ESD #4/DRV.15.0.1/Linux x86_64/Linux 2.4.2
     @ref Qore::SQL::SQLStatement "SQLStatement" is active, the existing statement will be canceled before starting the
     new statement.
 
+    @ref Qore::SQL::SQLStatement::describe() "SQLStatement::describe()" describes the columns of the statement's
+    result set in a hash keyed by column name, as the rows are returned; each column is described by a hash with the
+    following keys:
+    - \c name: the column name
+    - \c type: the type code of the values returned (ex: \c NT_INT, as the \c typeCode() pseudo-method returns
+      it for a value); with the default \c "optimal-numbers" option, \c DECIMAL and \c NUMERIC columns are
+      described as numbers, while an integral value is returned as an integer
+    - \c maxsize: the maximum size of the column as the client library reports it
+    - \c native_type: the Client-Library datatype, for example \c "char", \c "int", \c "decimal" or
+      \c "datetime"
+    - \c internal_id: the Client-Library datatype code
+    - \c nullable: \c True if the column can be \c NULL
+    - \c precision and \c scale: for \c DECIMAL and \c NUMERIC columns
+    .
+    When every result has been read, the columns of the last result set are described; SQL without a result set has
+    no columns.  @ref Qore::SQL::SQLStatement::getOutputRows() "SQLStatement::getOutputRows()" returns the same value
+    as @ref Qore::SQL::SQLStatement::getOutput() "SQLStatement::getOutput()", as the driver has no output buffers
+    that are result sets.
+
     @section sybase_multiple_results Multiple Results
 
     SQL can return more than one result: a batch of several statements, or a stored procedure, which returns its

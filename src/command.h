@@ -45,6 +45,8 @@ class connection;
 
 struct CS_DATAFMT_EX : public CS_DATAFMT {
     int origin_datatype;
+    //! the maximum length that the server described, before the driver adjusted it for its buffers
+    CS_INT origin_maxlength;
 };
 
 typedef std::vector<CS_DATAFMT_EX> row_result_t;
@@ -189,6 +191,14 @@ public:
     DLLLOCAL QoreColumnarResult* read_columnar(const Placeholders* placeholder_list, int cnt, ExceptionSink* xsink);
 #endif
 
+    //! describes the columns of the current result, or of the last result set when every result has been read
+    /** @return a hash keyed by column name, as the rows are returned, with a description hash for each column:
+        \c name, \c type (the type code of the value returned), \c maxsize, \c native_type, \c internal_id (the
+        Client-Library datatype), \c nullable, and \c precision and \c scale for \c DECIMAL and \c NUMERIC columns;
+        an empty hash if no result has columns
+    */
+    DLLLOCAL QoreHashNode* describe(const Placeholders* placeholder_list, ExceptionSink* xsink);
+
     DLLLOCAL QoreHashNode *read_cols(const Placeholders *placeholder_list,
                                     bool cols,
                                     ExceptionSink* xsink) {
@@ -257,6 +267,13 @@ private:
     DLLLOCAL QoreValue getNumber(const char* str, size_t len);
 
     DLLLOCAL void setupColumns(QoreHashNode& h, const Placeholders *ph);
+
+    //! returns the name of the given column, as the rows are returned
+    DLLLOCAL std::string get_column_name(size_t i, const Placeholders* ph) const;
+
+    //! assigns the value to the column name in the hash, with a suffix if the name is already used
+    DLLLOCAL static void assign_column(QoreHashNode& h, const std::string& col_name, QoreValue value,
+            ExceptionSink* xsink);
 };
 
 
