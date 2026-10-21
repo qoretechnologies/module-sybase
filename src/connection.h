@@ -224,10 +224,14 @@ public:
     */
     DLLLOCAL QoreValue execReadOutput(QoreString *cmd_text, const QoreListNode *qore_args, bool need_list,
             bool doBinding, bool cols, ExceptionSink* xsink, bool single_row = false,
-            const char* only_result_set = nullptr);
+            const char* only_result_set = nullptr, bool typed = false);
     DLLLOCAL command::ResType readNextResult(command& cmd, bool& connection_reset, ExceptionSink* xsink);
 
     DLLLOCAL QoreValue select(const QoreString *cmd, const QoreListNode *parameters, ExceptionSink *xsink);
+#ifdef QDBI_METHOD_SELECT_TYPED
+    //! returns every result as select() does, with each result set as a typed result
+    DLLLOCAL QoreValue selectTyped(const QoreString *cmd, const QoreListNode *parameters, ExceptionSink *xsink);
+#endif
 #ifdef HAVE_QORE_COLUMNAR_RESULT
     DLLLOCAL QoreColumnarResult* selectColumnar(const QoreString *cmd, const QoreListNode *parameters,
             ExceptionSink *xsink);

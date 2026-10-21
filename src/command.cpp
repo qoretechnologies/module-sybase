@@ -961,7 +961,8 @@ command::ResType command::read_next_result1(bool& disconnect, ExceptionSink* xsi
 }
 
 QoreValue command::readOutput(connection& conn, command& cmd, bool list, bool& connection_reset, bool cols,
-        ExceptionSink* xsink, bool single_row, const char* only_result_set) {
+        ExceptionSink* xsink, bool single_row, const char* only_result_set, bool typed) {
+    assert(!typed || (!list && cols));
     ValueHolder qresult(xsink);
 
     ss::ResultFactory rf(xsink);
@@ -995,6 +996,21 @@ QoreValue command::readOutput(connection& conn, command& cmd, bool list, bool& c
                     have_result_set = true;
                 }
                 qresult = read_rows(0, list, cols, xsink, single_row);
+                if (*xsink) {
+                    return QoreValue();
+                }
+#ifdef QDBI_METHOD_SELECT_TYPED
+                // each result set is typed as Datasource::selectTyped() types the only one
+                if (typed) {
+                    assert(qresult->getType() == NT_HASH);
+                    ReferenceHolder<QoreHashNode> typed_result(qore_dbi_make_typed_select_result(
+                        m_conn.getDatasource(), qresult->get<const QoreHashNode>(), nullptr, xsink), xsink);
+                    if (*xsink) {
+                        return QoreValue();
+                    }
+                    qresult = typed_result.release();
+                }
+#endif
                 rf.add(qresult, list);
                 break;
 

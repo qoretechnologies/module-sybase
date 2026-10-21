@@ -179,8 +179,12 @@ public:
         result set raises \c TDS-MULTIPLE-RESULT-SETS-ERROR; the value describes the SQL for the exception, ex:
         "SQL passed to selectRows()"; without a result set, the total row count is returned (if greater than 0)
     */
+    /** @param typed if true, each result set is returned as a typed result (Datasource::selectTyped()); requires
+        \a list = false and \a cols = true
+    */
     DLLLOCAL QoreValue readOutput(connection& conn, command& cmd, bool list, bool& connection_reset, bool cols,
-            ExceptionSink* xsink, bool single_row = false, const char* only_result_set = nullptr);
+            ExceptionSink* xsink, bool single_row = false, const char* only_result_set = nullptr,
+            bool typed = false);
 
     DLLLOCAL QoreHashNode *read_cols(const Placeholders *placeholder_list,
                                     int cnt,

@@ -34,6 +34,9 @@
       - the results of a @ref Qore::SQL::SQLStatement "SQLStatement" that are not read are discarded with their
         errors when it is closed or executed again or when another call is made on the connection; such an error was
         raised by the next call
+    - @ref Qore::SQL::Datasource::selectTyped() "Datasource::selectTyped()" returns each result set of SQL that
+      returns more than one result as a typed result; they were returned untyped, as by
+      @ref Qore::SQL::Datasource::select() "Datasource::select()"
     - @ref Qore::SQL::SQLStatement::describe() "SQLStatement::describe()" describes the columns of the result set,
       and @ref Qore::SQL::SQLStatement::getOutputRows() "SQLStatement::getOutputRows()" returns the output; both
       returned nothing and printed the name of an internal function on standard output

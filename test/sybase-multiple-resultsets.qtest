@@ -50,6 +50,7 @@ class MultipleResultSetsTest inherits QUnit::Test {
         }
 
         addTestCase("exec() and select() return every result", \allResultsTest());
+        addTestCase("selectTyped() returns every result set typed", \typedResultsTest());
         addTestCase("the error of a later statement is raised", \laterErrorTest());
         addTestCase("an error reported by a procedure after its rows is raised", \procedureErrorTest());
         addTestCase("calls returning one result set skip the row counts", \oneResultSetTest());
@@ -127,8 +128,6 @@ class MultipleResultSetsTest inherits QUnit::Test {
         assertEq(expected, ds.exec(two));
         assertEq(expected, ds.execRaw(two));
         assertEq(expected, ds.select(two));
-        # selectTyped() returns the results as select() does
-        assertEq(expected, ds.selectTyped(two));
         assertEq(expected, ds.exec(sql("exec T_two")));
 
         expected = {
@@ -145,6 +144,37 @@ class MultipleResultSetsTest inherits QUnit::Test {
         # an empty result set is kept
         assertEq({"query0": {"id": (1,)}, "query1": {}},
             ds.exec(sql("select id from T where id = 1; select id from T where id = 99")));
+    }
+
+    #! each result set is typed as the only result set of SQL with one result is
+    typedResultsTest() {
+        checkConnection();
+        on_exit ds.rollback();
+
+        hash<auto> one = ds.selectTyped(sql("select id from T where id = 1"));
+        assertEq("buffer<int64>", one.id.fullType());
+
+        hash<auto> h = ds.selectTyped(sql("select id from T where id = 1; select name from T where id = 2"));
+        assertEq(("query0", "query1"), keys h);
+        assertEq(one.fullType(), h.query0.fullType(), "same typed result as for one result set");
+        assertEq("buffer<int64>", h.query0.id.fullType());
+        assertEq((1,), h.query0.id.toList());
+        assertEq(ds.selectTyped(sql("select name from T where id = 2")).fullType(), h.query1.fullType());
+        assertEq(("two",), h.query1.name);
+        assertEq(h, ds.selectTyped(sql("exec T_two")));
+
+        # row counts are returned as select() returns them
+        h = ds.selectTyped(sql("update T set name = name where id < 3; select id from T order by id"));
+        assertEq(("query0", "query1"), keys h);
+        assertEq(2, h.query0);
+        assertEq((1, 2, 3), h.query1.id.toList());
+        assertEq(1, ds.selectTyped(sql("update T set name = name where id = 99; update T set name = name "
+            "where id = 3")));
+        # an empty result set, as for one result set
+        h = ds.selectTyped(sql("select id from T where id = 1; select id from T where id = 99"));
+        hash<auto> empty = ds.selectTyped(sql("select id from T where id = 99"));
+        assertEq(empty.fullType(), h.query1.fullType());
+        assertEq(empty, h.query1);
     }
 
     laterErrorTest() {

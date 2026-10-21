@@ -195,6 +195,16 @@ static QoreValue sybase_select(Datasource *ds, const QoreString *qstr, const Qor
     END_CALLBACK(0);
 }
 
+#ifdef QDBI_METHOD_SELECT_TYPED
+static QoreValue sybase_select_typed(Datasource *ds, const QoreString *qstr, const QoreListNode *args,
+        ExceptionSink *xsink) {
+    BEGIN_CALLBACK;
+    connection* conn = static_cast<connection*>(ds->getPrivateData());
+    return conn->selectTyped(qstr, args, xsink);
+    END_CALLBACK(0);
+}
+#endif
+
 #ifdef HAVE_QORE_COLUMNAR_RESULT
 static QoreColumnarResult* sybase_select_columnar(Datasource *ds, const QoreString *qstr, const QoreListNode *args,
         ExceptionSink *xsink) {
@@ -344,6 +354,9 @@ static void sybase_module_init(QoreModuleInitContext& ctx, ExceptionSink& xsink)
     methods.add(QDBI_METHOD_OPEN, sybase_open);
     methods.add(QDBI_METHOD_CLOSE, sybase_close);
     methods.add(QDBI_METHOD_SELECT, sybase_select);
+#ifdef QDBI_METHOD_SELECT_TYPED
+    methods.add(QDBI_METHOD_SELECT_TYPED, sybase_select_typed);
+#endif
 #ifdef HAVE_QORE_COLUMNAR_RESULT
     methods.add(QDBI_METHOD_SELECT_COLUMNAR, sybase_select_columnar);
 #endif

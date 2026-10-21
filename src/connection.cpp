@@ -218,7 +218,7 @@ command* connection::setupCommand(const QoreString* cmd_text, const QoreListNode
 }
 
 QoreValue connection::execReadOutput(QoreString* cmd_text, const QoreListNode* qore_args, bool need_list,
-        bool doBinding, bool cols, ExceptionSink* xsink, bool single_row, const char* only_result_set) {
+        bool doBinding, bool cols, ExceptionSink* xsink, bool single_row, const char* only_result_set, bool typed) {
     // cancel any active statement
     invalidateStatement();
 
@@ -237,7 +237,7 @@ QoreValue connection::execReadOutput(QoreString* cmd_text, const QoreListNode* q
 
     while (true) {
         result = cmd->readOutput(*this, *cmd.get(), need_list, connection_reset, cols, xsink, single_row,
-            only_result_set);
+            only_result_set, typed);
         if (*xsink)
             return QoreValue();
 
@@ -408,6 +408,20 @@ QoreValue connection::select(const QoreString *cmd, const QoreListNode* args, Ex
     purge_messages(xsink);
     return rv.release();
 }
+
+#ifdef QDBI_METHOD_SELECT_TYPED
+QoreValue connection::selectTyped(const QoreString *cmd, const QoreListNode* args, ExceptionSink *xsink) {
+    // copy the string here for intrusive editing, convert encoding too if necessary
+    QoreString *query = cmd->convertEncoding(enc, xsink);
+    if (!query)
+        return QoreValue();
+
+    std::unique_ptr<QoreString> tmp(query);
+    ValueHolder rv(execReadOutput(query, args, false, true, true, xsink, false, nullptr, true), xsink);
+    purge_messages(xsink);
+    return rv.release();
+}
+#endif
 
 #ifdef HAVE_QORE_COLUMNAR_RESULT
 QoreColumnarResult* connection::selectColumnar(const QoreString *cmd, const QoreListNode* args, ExceptionSink *xsink) {

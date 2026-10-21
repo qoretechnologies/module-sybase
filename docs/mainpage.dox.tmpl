@@ -119,7 +119,8 @@ Sybase Client-Library/15.0/P-EBF13571 ESD #4/DRV.15.0.1/Linux x86_64/Linux 2.4.2
         of column lists, each row count greater than 0 as an integer; row counts of 0 or less are skipped.  If more \
         than one value is left, they are returned in a hash with keys <tt>query</tt><i>#</i> (\c query0, \c query1, \
         ...) in order; one value is returned as it is, as for a single statement, and no value as for a single \
-        statement that returns none.  \c selectTyped() returns several results as \c select() does.
+        statement that returns none.  \c selectTyped() returns each result set as a typed result, as it returns \
+        the result set of SQL with one result.
     |@ref Qore::SQL::Datasource::selectRows() "Datasource::selectRows()", \
         @ref Qore::SQL::Datasource::selectRowsTyped() "Datasource::selectRowsTyped()", \
         @ref Qore::SQL::Datasource::selectRow() "Datasource::selectRow()", \
