@@ -29,6 +29,9 @@ export MAKE_JOBS=4
 # in the module path of every test that loads a driver
 ${MODULE_SRC_DIR}/test/docker_test/check-module-paths.sh freetds sybase
 
+# every file that this job installs is newer than this one
+build_start=$(mktemp)
+
 # build module and install
 echo && echo "-- building module --"
 cd ${MODULE_SRC_DIR}
@@ -52,6 +55,14 @@ cd ${MODULE_SRC_DIR}
 # not mask the results of the others (the loop runs alphabetically, so a single
 # early failure would otherwise abort the whole job via "set -e")
 failed=""
+# the tests must load the module that this job built and installed, not one that the image already has
+loaded=$(gosu qore:qore qore -l freetds -e 'printf("%s", get_module_hash().freetds.filename);')
+if [ ! "${loaded}" -nt "${build_start}" ]; then
+    echo "ERROR: the tests would load '${loaded}', which this job did not install" >&2
+    exit 1
+fi
+echo "-- the tests load ${loaded}"
+
 for test in test/*.qtest; do
     echo "=== running ${test} ==="
     if ! gosu qore:qore qore $test -vv; then
