@@ -33,85 +33,104 @@ class SybaseCancelCallbackTest inherits QUnit::Test {
         testSkip("QORE_DB_CONNSTR_SYBASE/QORE_DB_CONNSTR_FREETDS not set; skipping cancel callback tests");
     }
 
-    #! Test that Sybase operations can be cancelled via the cancel callback
-    testSybaseCancel() {
-        SandboxManager sm();
-        Queue resultQueue();
+    #! The sandboxed code: it takes a session-owned application lock, which the test then requests, and runs the
+    #! batch under test, whose first statement releases the lock; so the test's own request returns exactly when the
+    #! batch is executing on the server, with no sleep and no polling
+    const SandboxSource = "
+%new-style
+%require-types
+%strict-args
 
-        Program p(PO_NO_CHILD_PO_RESTRICTIONS);
-        p.setSandboxManager(sm);
-        p.loadModule("freetds");
-
-        p.parse(sprintf("
-%%new-style
-%%require-types
-%%strict-args
-
-sub runQuery(Queue q, string connstr) {
+sub runStatement(Queue q, string connstr, string lock_sql, string sql) {
     Datasource ds(connstr);
     ds.setAutoCommit(True);
-    q.push('connected');
-
     try {
-        # WAITFOR DELAY is Sybase/SQL Server's equivalent of sleep
-        ds.exec('WAITFOR DELAY ''00:00:10''');
+        if ((ds.select(lock_sql).r[0] ?? -999) < 0) {
+            throw 'LOCK-ERROR', 'the application lock was not granted';
+        }
+        q.push('locked');
+        ds.exec(sql);
         q.push({'cancelled': False});
     } catch (hash<ExceptionInfo> ex) {
         q.push({'cancelled': True, 'err': ex.err, 'desc': ex.desc});
     }
 }
-        ", "sybase_cancel"), "sybase_cancel_test");
+";
 
-        background p.callFunction("runQuery", resultQueue, connstr);
+    #! the longest the test waits for a lock or for the sandboxed code; a guard against a hang, never an expected
+    #! time
+    const Timeout = 60;
 
-        auto connected = resultQueue.get(10s);
-        assertEq("connected", connected, "Connected to Sybase");
-
-        usleep(500ms);
-        sm.requestInterrupt();
-
-        hash<auto> result = resultQueue.get(5s);
-        assertEq(True, result.cancelled, "Sybase query was cancelled");
-        assertEq(True, exists result.err, "Exception was thrown: " + result.err);
+    #! Returns a batch that requests the exclusive session-owned application lock and selects its status as \c r
+    /** @param timeout_ms how long the server waits for the lock; -1 waits until it is granted
+    */
+    private static string lockSql(string resource, int timeout_ms) {
+        return sprintf("set nocount on; declare @r int; exec @r = sp_getapplock @Resource = '%s', @LockMode = 'Exclusive', "
+            "@LockOwner = 'Session', @LockTimeout = %d; select @r as r", resource, timeout_ms);
     }
 
-    #! Test Sybase cancel when query is blocked on server
-    testSybaseBlockedCancel() {
+    #! Returns a statement that releases the session-owned application lock
+    private static string unlockSql(string resource) {
+        return sprintf("exec sp_releaseapplock @Resource = '%s', @LockOwner = 'Session'", resource);
+    }
+
+    #! Interrupts a sandboxed batch once it is executing, and returns what the batch's caller saw
+    /** @param body the statements of the batch after it has released the lock
+        @param hold an application lock that the test holds while the batch runs, if any
+    */
+    private hash<auto> interruptExecuting(string body, *string hold) {
+        string signal = sprintf("qore_cancel_signal_%d", now_us() % 1000000000);
+        Datasource test(connstr);
+        test.setAutoCommit(True);
+        if (hold) {
+            assertGe(0, test.select(lockSql(hold, 0)).r[0], "the test holds the lock that the batch waits for");
+        }
+        on_exit {
+            foreach *string resource in ((signal, hold)) {
+                if (resource) {
+                    try {
+                        test.exec(unlockSql(resource));
+                    } catch (hash<ExceptionInfo> ex) {
+                        # the lock is not held: it was not granted
+                    }
+                }
+            }
+        }
+
         SandboxManager sm();
         Queue resultQueue();
-
         Program p(PO_NO_CHILD_PO_RESTRICTIONS);
         p.setSandboxManager(sm);
         p.loadModule("freetds");
+        p.parse(SandboxSource, "sybase_cancel_sandbox");
 
-        p.parse(sprintf("
-%%new-style
-%%require-types
-%%strict-args
+        background p.callFunction("runStatement", resultQueue, connstr, lockSql(signal, 0),
+            unlockSql(signal) + "; " + body);
+        assertEq("locked", resultQueue.get(Timeout * 1000), "the sandboxed session holds the lock");
+        # returns when the batch under test has released the lock: it is executing on the server
+        assertGe(0, test.select(lockSql(signal, Timeout * 1000)).r[0],
+            "the test's request for the lock is granted once the batch has released it");
 
-sub runBlockingQuery(Queue q, string connstr) {
-    Datasource ds(connstr);
-    ds.setAutoCommit(True);
-    q.push('connected');
-
-    try {
-        ds.exec('WAITFOR DELAY ''00:01:00''');
-        q.push({'cancelled': False});
-    } catch (hash<ExceptionInfo> ex) {
-        q.push({'cancelled': True, 'err': ex.err});
-    }
-}
-        ", "sybase_blocked"), "sybase_blocked_test");
-
-        background p.callFunction("runBlockingQuery", resultQueue, connstr);
-
-        auto connected = resultQueue.get(10s);
-        assertEq("connected", connected, "Connected to Sybase");
-
-        usleep(1s);
+        # the interrupt runs the connection's cancel callback, which cancels the executing batch
         sm.requestInterrupt();
+        return resultQueue.get(Timeout * 1000);
+    }
 
-        hash<auto> result = resultQueue.get(5s);
-        assertEq(True, result.cancelled, "Blocked Sybase query was cancelled");
+    #! An executing batch is cancelled by the cancel callback when its sandbox is interrupted
+    testSybaseCancel() {
+        # longer than the bound of the result wait: without the cancel callback, the batch would end only after the
+        # test has failed
+        hash<auto> result = interruptExecuting("WAITFOR DELAY '00:05:00'");
+        assertEq(True, result.cancelled, "the executing batch was cancelled");
+        assertTrue(exists result.err, "the batch's caller saw an exception: " + result.err);
+    }
+
+    #! A batch blocked on the server is cancelled by the cancel callback when its sandbox is interrupted
+    testSybaseBlockedCancel() {
+        string blocker = sprintf("qore_cancel_blocker_%d", now_us() % 1000000000);
+        hash<auto> result = interruptExecuting(sprintf("exec sp_getapplock @Resource = '%s', @LockMode = "
+            "'Exclusive', @LockOwner = 'Session', @LockTimeout = -1", blocker), blocker);
+        assertEq(True, result.cancelled, "the batch blocked on a lock was cancelled");
+        assertTrue(exists result.err, "the batch's caller saw an exception: " + result.err);
     }
 }
