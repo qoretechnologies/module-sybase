@@ -10,9 +10,70 @@
 
 #! Validate the driver without opening a network connection.
 class FreeTdsOfflineTest inherits QUnit::Test {
+    public {
+        #! the execution modes that a NULL protocol is set in
+        const Modes = {"ast": EM_AST, "ir": EM_IR, "jit": EM_JIT, "tiered": EM_TIERED};
+
+        #! the outcome of opening a connection with a NULL protocol
+        const NullProtocolError = "TDS-OPTION-ERROR: invalid value '' for the 'tds-version' option; expecting one "
+            "of: \"auto\", \"4.0\", \"4.2\", \"4.6\", \"4.9.5\", \"5.0\", \"7.0\", \"7.1\", \"7.2\", \"7.3\", "
+            "\"7.4\"";
+
+        #! sets a NULL protocol and opens the connection; each function returns the exception as "err: desc"
+        /** The AST interpreter and the IR and JIT engines pass a literal NULL to a builtin differently, so the
+            option is set from code parsed in each execution mode: from a function and a method, with a literal
+            NULL and NULL from a variable
+        */
+        const NullProtocolCode = "%modern
+string sub open_with(auto val) {
+    Datasource db(\"freetds:offline@unused\");
+    try {
+        db.setOption(\"tds-version\", val);
+        db.open();
+        db.close();
+        return \"opened\";
+    } catch (hash<ExceptionInfo> ex) {
+        return ex.err + \": \" + ex.desc;
+    }
+}
+string sub literal_null() {
+    Datasource db(\"freetds:offline@unused\");
+    try {
+        db.setOption(\"tds-version\", NULL);
+        db.open();
+        db.close();
+        return \"opened\";
+    } catch (hash<ExceptionInfo> ex) {
+        return ex.err + \": \" + ex.desc;
+    }
+}
+string sub variable_null() {
+    auto n = NULL;
+    return open_with(n);
+}
+class NullProtocol {
+    string literalNull() {
+        Datasource db(\"freetds:offline@unused\");
+        try {
+            db.setOption(\"tds-version\", NULL);
+            db.open();
+            db.close();
+            return \"opened\";
+        } catch (hash<ExceptionInfo> ex) {
+            return ex.err + \": \" + ex.desc;
+        }
+    }
+}
+string sub method_literal_null() {
+    return (new NullProtocol()).literalNull();
+}
+";
+    }
+
     constructor() : Test("FreeTdsOfflineTest", "1.0", \ARGV) {
         addTestCase("driver capabilities", \capabilities());
         addTestCase("protocol validation before connection", \invalidProtocol());
+        addTestCase("a NULL protocol before connection in each execution mode", \nullProtocol());
         addTestCase("missing username before connection", \missingUsername());
         addTestCase("unopened connection cleanup", \cleanup());
         set_return_value(main());
@@ -34,6 +95,17 @@ class FreeTdsOfflineTest inherits QUnit::Test {
         assertThrows("TDS-OPTION-ERROR", sub () { db.open(); });
         assertFalse(db.inTransaction());
         db.close();
+    }
+
+    nullProtocol() {
+        foreach hash<auto> mode in (Modes.pairIterator()) {
+            Program pgm();
+            pgm.setExecMode(mode.value);
+            pgm.parse(NullProtocolCode, "null-protocol-" + mode.key);
+            foreach string func in ("literal_null", "variable_null", "method_literal_null") {
+                assertEq(NullProtocolError, pgm.callFunction(func), mode.key + " " + func);
+            }
+        }
     }
 
     missingUsername() {
