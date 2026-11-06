@@ -180,7 +180,7 @@ int sybase_query::init(const QoreString *cmd_text,
                //param_list[count++].set(PN_VALUE);
 
                tmp.clear();
-               tmp.sprintf("@par%u", param_list.size());
+               tmp.sprintf("@par%zu", param_list.size());
                m_cmd.replace(offset, 2, tmp.c_str());
                s = m_cmd.getBuffer() + offset + tmp.strlen();
            } else if (ch == 'd') {

@@ -18,7 +18,7 @@ public:
         if (xsink->isException()) {
             return;
         }
-        xsink->raiseException(e1.c_str(), e2.c_str());
+        xsink->raiseException(e1.c_str(), "%s", e2.c_str());
     }
 
     DLLLOCAL const char* getErr() const {

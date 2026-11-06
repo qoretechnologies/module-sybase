@@ -973,12 +973,12 @@ int connection::purge_messages(ExceptionSink *xsink) {
             desc->sprintf("state %d, server message %d, ", smsg.state, smsg.msgnumber);
             if (smsg.line)
                 desc->sprintf("line %d, ", smsg.line);
-            desc->sprintf("severity %ld: %s", smsg.severity, smsg.text);
+            desc->sprintf("severity %d: %s", smsg.severity, smsg.text);
             desc->trim_trailing('\n');
             xsink->raiseException("TDS-SERVER-ERROR", desc);
             rc = -1;
         }
-        printd(1, "server: line:%ld, severity:%ld, n:%d: %s", smsg.line, smsg.severity, smsg.msgnumber, smsg.text);
+        printd(1, "server: line:%d, severity:%d, n:%d: %s", smsg.line, smsg.severity, smsg.msgnumber, smsg.text);
     }
     ret = ct_diag(m_connection, CS_CLEAR, CS_ALLMSG_TYPE, CS_UNUSED, 0);
     assert(ret == CS_SUCCEED);
