@@ -1,0 +1,108 @@
+#!/usr/bin/env qore
+# -*- mode: qore; indent-tabs-mode: nil -*-
+# Copyright (C) 2026 Qore Technologies, s.r.o.
+# SPDX-License-Identifier: MIT
+# test-platform: macos - sandbox network policy for FreeTDS TCP connections
+
+%modern
+%no-child-restrictions
+%prepend-module-path "${SCRIPT_DIR}/../build"
+%requires QUnit
+%requires freetds
+%exec-class SybaseSandboxRefusedTest
+
+#! The freetds and sybase drivers cannot be used by code under a sandbox that restricts network access (qore#5747)
+/** The drivers cannot check their destinations: a TDS server can route the login to another server (TDS routing),
+    which FreeTDS follows inside its connection setup without a way to refuse it, so the routed server would be
+    contacted before any check.  A Qore that checks DBI connections against the sandbox therefore refuses them for
+    code under a sandbox that restricts network or filesystem access, before any connection is made; an allow-all
+    sandbox and code without a sandbox connect as before.
+
+    No database is needed: a listening socket of the test shows whether the driver connected.
+
+    Needs a Qore with the DBI sandbox check (DBI_CAP_LOCAL_ONLY); the test skips otherwise.
+*/
+class SybaseSandboxRefusedTest inherits QUnit::Test {
+    public {
+        #! the guard against a hang when the fixture waits for the driver; never an expected time
+        const FixtureTimeout = 10s;
+    }
+
+    constructor() : QUnit::Test("SybaseSandboxRefusedTest", "1.0", \ARGV) {
+        addTestCase("a restricting sandbox refuses the driver before connecting", \testRefused());
+        addTestCase("an allow-all sandbox does not", \testAllowAll());
+        set_return_value(main());
+    }
+
+    setUp() {
+        if (!haveDbiSandboxCheck()) {
+            testSkip("this Qore does not check DBI connections against the sandbox");
+        }
+    }
+
+    #! returns True if Qore checks DBI connections against the sandbox (qore#5747): it has DBI_CAP_LOCAL_ONLY
+    static bool haveDbiSandboxCheck() {
+        Program p(PO_NEW_STYLE);
+        try {
+            p.parse("int sub f() { return DBI_CAP_LOCAL_ONLY; }", "check");
+            return True;
+        } catch (hash<ExceptionInfo> ex) {
+            return False;
+        }
+    }
+
+    #! returns the error of an open in a Program governed by the sandbox
+    static string open(SandboxManager sm, int port) {
+        Program p(PO_NO_CHILD_PO_RESTRICTIONS);
+        p.loadModule("freetds");
+        p.parse("%modern
+string sub open(int port) {
+    try {
+        Datasource ds({\"type\": \"freetds\", \"host\": \"127.0.0.1\", \"port\": port, \"db\": \"nothing\",
+            \"user\": \"nobody\", \"pass\": \"nothing\", \"options\": {\"login-timeout\": 5, \"tds-version\": \"7.4\"}});
+        ds.open();
+        ds.close();
+        return \"NONE\";
+    } catch (hash<ExceptionInfo> ex) {
+        return ex.err;
+    }
+}", "sybase-sandbox-refused");
+        p.setSandboxManager(sm);
+        return p.callFunction("open", port);
+    }
+
+    testRefused() {
+        Socket server();
+        server.bind("127.0.0.1:0", True);
+        server.listen();
+        on_exit server.close();
+        # the destination is allowed: the driver is refused, as it cannot check where the connection goes
+        SandboxManager sm();
+        sm.setNetworkDefaultPolicy(True);
+        sm.setFilesystemDefaultPolicy(True);
+        sm.addNetworkDeniedIPRange("203.0.113.0/24");
+        assertEq("NETWORK-ACCESS-DENIED", open(sm, server.getSocketInfo().port));
+        # refused before connecting: a connection would be waiting by the time the open returned
+        assertFalse(server.isDataAvailable(0), "the driver did not connect");
+    }
+
+    testAllowAll() {
+        Socket server();
+        server.bind("127.0.0.1:0", True);
+        server.listen();
+        on_exit server.close();
+        SandboxManager sm();
+        sm.setNetworkDefaultPolicy(True);
+        sm.setFilesystemDefaultPolicy(True);
+        Queue done();
+        background done.push(open(sm, server.getSocketInfo().port));
+        *Socket peer = server.accept(FixtureTimeout);
+        assertTrue(exists peer, "the driver connected");
+        if (peer) {
+            peer.shutdown();
+            peer.close();
+        }
+        # the fixture is no TDS server: the login fails
+        assertEq("TDS-CTLIB-CONNECT-ERROR", done.get(FixtureTimeout));
+    }
+}
