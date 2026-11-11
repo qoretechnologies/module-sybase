@@ -7,6 +7,8 @@
     @section sybase_1_4 sybase Driver Version 1.4
 
     <b>New Features</b>
+    - documented that, in a %Qore version that checks DBI connections against the sandbox, code under a sandbox that
+      restricts network or filesystem access cannot use the drivers (see @ref sybasesandbox)
     - added opt-in native Microsoft SQL Server BCP loading to the \c freetds driver; see
       @ref sybasefreetds_native_bulk_loadguide
     - added driver-owned bounded mutation-stream reporting with exact serialized-payload byte accounting for native

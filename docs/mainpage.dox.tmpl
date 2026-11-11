@@ -185,6 +185,15 @@ list<hash<auto>> rows = db.selectRows("update t set flag = 1 where id < 3; selec
     - @anchor sybasestoredprocs @subpage sybasestoredprocsguide
     - @anchor sybasereleasenotes @subpage sybasereleasenotesguide
 
+    @section sybasesandbox Sandboxing
+
+    In a %Qore version that checks DBI connections against the sandbox, code governed by a sandbox that restricts
+    network or filesystem access cannot open a connection of the \c freetds or \c sybase drivers
+    (\c NETWORK-ACCESS-DENIED): a TDS server can route the login to another server (TDS routing, as Azure SQL does),
+    which the client library follows inside its connection setup without a way to refuse it, so the routed server
+    would be contacted before any check.  A sandbox that allows every destination and every path (one attached only
+    for interrupts or resource limits) does not restrict the drivers.
+
     @section sybasetrans Transaction Management
 
     Transaction management is supported by enabling chained transaction mode on each connection. In autocommit mode in the @ref Qore::SQL::Datasource class, Qore executes a commit after every request to the server.
