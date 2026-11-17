@@ -105,7 +105,7 @@ public class SybaseStatementTest inherits QUnit::Test {
             while (stmt.next()) {
                 cnt++;
                 hash row = stmt.fetchRow();
-                testAssertionValue(sprintf("value %d-%d", i, cnt), row.name, Numbers{i});
+                testAssertionValue(sprintf("value %d-%d", i, cnt - 1), row.name, Numbers{i});
             }
             testAssertionValue("row count " + i, cnt, 1);
             testAssertionValue("affected rows " + i, stmt.affectedRows(), 1);
