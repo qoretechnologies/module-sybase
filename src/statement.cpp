@@ -110,10 +110,8 @@ int ss::Statement::finishResults(SQLStatement* stmt, ExceptionSink* xsink) {
 bool ss::Statement::next(SQLStatement* stmt, ExceptionSink* xsink) {
    if (checkValid(xsink))
       return false;
-   // a row read by a previous call and not yet returned
-   if (has_res()) {
-      return true;
-   }
+   // next() moves to the next row: a row read by a previous call and not retrieved with fetchRow() is discarded
+   set_res(nullptr, xsink);
    if (results_done) {
       return false;
    }

@@ -55,6 +55,10 @@
     - @ref Qore::SQL::SQLStatement::fetchRows() "SQLStatement::fetchRows()" with a row count returns at most that
       many rows; it returned one more after @ref Qore::SQL::SQLStatement::next() "SQLStatement::next()" or a previous
       \c fetchRows() call
+    - @ref Qore::SQL::SQLStatement::next() "SQLStatement::next()" moves to the next row when the current row was not
+      retrieved with @ref Qore::SQL::SQLStatement::fetchRow() "SQLStatement::fetchRow()"; it returned \c True for the
+      same row again, so a loop that called only \c next(), such as counting the records of a data provider, did not
+      end
     - fixed a crash of an optimized build when a statement could not be prepared, for example because of an
       invalid placeholder: the command that was not created was destroyed, and the process crashed instead of raising
       the exception; destroying a command also no longer throws an exception when it cannot be canceled

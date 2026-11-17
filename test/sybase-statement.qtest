@@ -66,6 +66,7 @@ public class SybaseStatementTest inherits QUnit::Test {
         addTestCase("stmt error", \test_error());
         addTestCase("stmt fetch columns", \test_fetch_columns());
         addTestCase("stmt fetch rows in blocks", \test_fetch_rows_blocks());
+        addTestCase("stmt next without fetchRow", \test_next_without_fetch());
         addTestCase("stmt describe", \test_describe());
         addTestCase("stmt getOutputRows", \test_get_output_rows());
         addTestCase("stmt bindValues", \test_bind_values());
@@ -104,7 +105,7 @@ public class SybaseStatementTest inherits QUnit::Test {
             while (stmt.next()) {
                 cnt++;
                 hash row = stmt.fetchRow();
-                testAssertionValue(sprintf("value %d-%d", i, $#), row.name, Numbers{i});
+                testAssertionValue(sprintf("value %d-%d", i, cnt), row.name, Numbers{i});
             }
             testAssertionValue("row count " + i, cnt, 1);
             testAssertionValue("affected rows " + i, stmt.affectedRows(), 1);
@@ -285,6 +286,29 @@ public class SybaseStatementTest inherits QUnit::Test {
         testAssertionValue("fetchRows(2) after fetchRows(1)", (map $1.number, stmt.fetchRows(2)), (1, 2));
         testAssertionValue("fetchRows(-1) after fetchRows(2)", (map $1.number, stmt.fetchRows(-1)), (3, 4));
         testAssertionValue("fetchRows(2) at the end", stmt.fetchRows(2), ());
+
+        stmt.commit();
+    }
+
+    #! next() moves to the next row whether or not the current row was retrieved
+    test_next_without_fetch() {
+        SQLStatement stmt(ds);
+        on_exit stmt.rollback();
+
+        stmt.prepare("select number from " + TableName + " order by number");
+        # the loop ends after the five rows of the table, or after one more call if next() does not move
+        int calls = 0;
+        while (stmt.next() && ++calls <= 5) {
+        }
+        testAssertionValue("next() calls returning True without fetchRow()", calls, 5);
+
+        stmt.exec();
+        testAssertionValue("next() 1", stmt.next(), True);
+        testAssertionValue("next() 2", stmt.next(), True);
+        testAssertionValue("fetchRow() after two next() calls", stmt.fetchRow().number, 1);
+        testAssertionValue("next() 3", stmt.next(), True);
+        testAssertionValue("fetchRows(-1) after next()", (map $1.number, stmt.fetchRows(-1)), (2, 3, 4));
+        testAssertionValue("next() at the end", stmt.next(), False);
 
         stmt.commit();
     }

@@ -134,6 +134,9 @@ public:
 
         // rows <= 0 means all rows; a row read by next() and not yet returned is returned first, and no row is read
         // after the last one returned
+        if (has_res()) {
+            reslist->push(release_res(), xsink);
+        }
         while (rows <= 0 || reslist->size() < static_cast<size_t>(rows)) {
             // next() reads the remaining results, and raises the error of a later statement, at the end of the rows
             if (!next(stmt, xsink)) {
