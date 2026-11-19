@@ -4,7 +4,7 @@
 
     @tableofcontents
 
-    @section sybaseintro Introduction to the sybase and freetds Modules
+    @section sybaseintro sybase Module Introduction
 
     Both the \c sybase and \c freetds modules are built from the same sources; this documentation will describe both
     modules.  They share most of their functionality, but there are differences, both depending on the client
@@ -64,119 +64,9 @@ Or for Sybase:
 Sybase Client-Library/15.0/P-EBF13571 ESD #4/DRV.15.0.1/Linux x86_64/Linux 2.4.21-27.ELsmp x86_64/BUILD1500-073/OPT/Mon May 15 03:18:58 2006
     @endverbatim
 
-    @subsection sybase_statements SQL Statement Execution
-
-    This driver allows all types of statements to be executed through
-    @ref Qore::SQL::Datasource::select() "Datasource::select()",
-    @ref Qore::SQL::Datasource::selectRows() "Datasource::selectRows()", and
-    @ref Qore::SQL::Datasource::exec() "Datasource::exec()" (and related methods), however rules about
-    @ref Qore::SQL::Datasource "Datasource" locking or @ref Qore::SQL::DatasourcePool "DatasourcePool" allocations
-    still apply as usual.  A stored procedure can be executed with any of them; see @ref sybase_multiple_results for
-    procedures and other SQL that return more than one result.
-
-    The TDS protocol only supports a single active query on a connection at one time, therefore there can be only one
-    @ref Qore::SQL::SQLStatement "SQLStatement" object active at any one time on a single server connection; if
-    additional SQL commands or a new @ref Qore::SQL::SQLStatement "SQLStatement" is executed while another
-    @ref Qore::SQL::SQLStatement "SQLStatement" is active, the existing statement will be canceled before starting the
-    new statement.
-
-    @ref Qore::SQL::SQLStatement::describe() "SQLStatement::describe()" describes the columns of the statement's
-    result set in a hash keyed by column name, as the rows are returned; each column is described by a hash with the
-    following keys:
-    - \c name: the column name
-    - \c type: the type code of the values returned (ex: \c NT_INT, as the \c typeCode() pseudo-method returns
-      it for a value); with the default \c "optimal-numbers" option, \c DECIMAL and \c NUMERIC columns are
-      described as numbers, while an integral value is returned as an integer
-    - \c maxsize: the maximum size of the column as the client library reports it
-    - \c native_type: the Client-Library datatype, for example \c "char", \c "int", \c "decimal" or
-      \c "datetime"
-    - \c internal_id: the Client-Library datatype code
-    - \c nullable: \c True if the column can be \c NULL
-    - \c precision and \c scale: for \c DECIMAL and \c NUMERIC columns
-    .
-    When every result has been read, the columns of the last result set are described; SQL without a result set has
-    no columns.  @ref Qore::SQL::SQLStatement::getOutputRows() "SQLStatement::getOutputRows()" returns the same value
-    as @ref Qore::SQL::SQLStatement::getOutput() "SQLStatement::getOutput()", as the driver has no output buffers
-    that are result sets.
-
-    @section sybase_multiple_results Multiple Results
-
-    SQL can return more than one result: a batch of several statements, or a stored procedure, which returns its
-    result sets and row counts followed by a return status.  The driver reads every result:
-    - if any statement fails, its error is raised (\c TDS-EXEC-ERROR, or \c TDS-SERVER-ERROR for an error that the
-      server reports in a message only, such as \c RAISERROR in a stored procedure), and the remaining results are
-      discarded; statements that the server executed before or after it are part of the current transaction, so roll
-      it back
-    - return status results are not returned, and the row count reported at the end of a result set (the number of
-      rows selected) is not a separate result
-    - SQL that returns exactly one result behaves as a single statement always has
-
-    |!Call|!More than one result
-    |@ref Qore::SQL::Datasource::exec() "Datasource::exec()", \
-        @ref Qore::SQL::Datasource::execRaw() "Datasource::execRaw()", \
-        @ref Qore::SQL::Datasource::select() "Datasource::select()", \
-        @ref Qore::SQL::Datasource::selectTyped() "Datasource::selectTyped()"|Each result set is returned as a hash \
-        of column lists, each row count greater than 0 as an integer; row counts of 0 or less are skipped.  If more \
-        than one value is left, they are returned in a hash with keys <tt>query</tt><i>#</i> (\c query0, \c query1, \
-        ...) in order; one value is returned as it is, as for a single statement, and no value as for a single \
-        statement that returns none.  \c selectTyped() returns each result set as a typed result, as it returns \
-        the result set of SQL with one result.
-    |@ref Qore::SQL::Datasource::selectRows() "Datasource::selectRows()", \
-        @ref Qore::SQL::Datasource::selectRowsTyped() "Datasource::selectRowsTyped()", \
-        @ref Qore::SQL::Datasource::selectRow() "Datasource::selectRow()", \
-        @ref Qore::SQL::Datasource::selectColumnar() "Datasource::selectColumnar()"|Row counts are skipped and the \
-        only result set is returned.  A second result set raises \c TDS-MULTIPLE-RESULT-SETS-ERROR, for example \
-        "SQL passed to selectRows() returned more than one result set; use select() or exec()".  Without a result \
-        set, the call behaves as for a single statement that returns none, with the total of the row counts, as \
-        \c SQLStatement::affectedRows() gives it: \c selectRows() and \c selectRowsTyped() return the total \
-        row count if it is greater than 0 (ex: 3 for statements updating 2 rows and 1 row), and no value \
-        otherwise, \c selectRow() raises \c DBI-SELECT-ROW-ERROR for a total greater than 0, and \
-        \c selectColumnar() raises \c COLUMNAR-RESULT-ERROR.
-    |@ref Qore::SQL::SQLStatement "SQLStatement"|@ref Qore::SQL::SQLStatement::exec() "SQLStatement::exec()" \
-        reads the row counts and return status results before the first result set, raising the error of a failing \
-        statement; without a result set, it reads every result.  \
-        @ref Qore::SQL::SQLStatement::affectedRows() "SQLStatement::affectedRows()" returns the total of the row \
-        counts read so far, or -1 if the server reported none.  The statement returns one result set: when it has \
-        been read to the end (\c next() returns \c False, or a fetch method or \c getOutput() reads the last row), \
-        the remaining results are read, so that call raises the error of a later failing statement and adds the \
-        later row counts, and a second result set raises \c TDS-MULTIPLE-RESULT-SETS-ERROR ("the SQL executed by \
-        SQLStatement returned more than one result set; use select() or exec()").  Results after rows that are not \
-        read to the end are discarded with their errors when the statement is closed or executed again, or when \
-        another call is made on the connection.
-
-    @par Example:
-    @code{.py}
-# returns {"query0": 2, "query1": {"id": (1, 2, 3)}}
-auto rv = db.exec("update t set flag = 1 where id < 3; select id from t order by id");
-
-# the row count is skipped; returns ({"id": 1}, {"id": 2}, {"id": 3})
-list<hash<auto>> rows = db.selectRows("update t set flag = 1 where id < 3; select id from t order by id");
-    @endcode
-
-    Output parameters of a stored procedure are returned by \c exec() and \c select() as follows (see
-    @ref sybasestoredprocsguide):
-
-    |!Query Type|!Result Format
-    |Return Parameters Only|A hash is returned with keys giving the output parameter values, as long as the \
-        placeholder format (ex: \c :name) was used for the output parameters, otherwise the key names in the output \
-        will be an increasing integer starting with 0 (i.e. 0, 1, etc).
-    |Return Parameters and Other Results|A hash is returned with keys \c params, giving the output parameter \
-        values as above, and \c query, giving the other results (result sets and row counts) as described above.
-
-    Server and client library notes:
-    - Microsoft SQL Server reports no row counts after <tt>SET NOCOUNT ON</tt>, which applies to the connection
-      until it is turned off; in a stored procedure, it applies until the procedure returns
-    - with the \c freetds driver, the statements of a stored procedure that return no rows give at most one row
-      count: the row count of the last such statement after the procedure's last result set; FreeTDS does not return
-      the row counts of the others, which the server sends, so a procedure that updates 2 rows and then 1 row returns
-      1, and one that updates rows and then returns a result set returns only the result set (the statements of a
-      batch give each row count)
-    - Microsoft SQL Server reports a row count of 1 for a variable assignment (<tt>SET \@v = ...</tt> or
-      <tt>SELECT \@v = ...</tt>) and for \c RETURN in a stored procedure, so a procedure that changes no rows, such as
-      one that only returns a status, returns a row count of 1 unless it sets <tt>SET NOCOUNT ON</tt>
-
     @section sybasedocumentation Documentation
 
+    - @subpage sybasestatements
     - @subpage sybasecapabilitiesguide
     - @anchor sybaseoptions @subpage sybaseoptionsguide
     - @anchor freetds_native_bulk_load @subpage sybasefreetds_native_bulk_loadguide

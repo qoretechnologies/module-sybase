@@ -197,6 +197,7 @@ set(CPP_SRC
 set(QORE_DOX_TMPL_SRC
     docs/guide-sybasecapabilities.dox.tmpl
     docs/mainpage.dox.tmpl
+    docs/sybasestatements.dox.tmpl
     docs/guide-freetds_native_bulk_load.dox.tmpl
     docs/guide-sybase_timezone.dox.tmpl
     docs/guide-sybasebind.dox.tmpl
