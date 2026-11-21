@@ -12,6 +12,7 @@
       BCP loads
 
     <b>Bug Fixes</b>
+    - connection values are masked in FreeTDS and Sybase driver diagnostics
     - fixed FreeTDS login timeouts retrying indefinitely through the inline diagnostic callback
     - added \c login-timeout and preserved Qore cancellation errors after native login returns
     - made statement cancellation callbacks safe when copied concurrently with helper destruction

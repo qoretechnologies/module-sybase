@@ -284,6 +284,8 @@ public:
     DLLLOCAL CS_CONNECTION* getConnection() const { return m_connection; }
     DLLLOCAL CS_CONTEXT* getContext() { return m_context.get_context(); }
     DLLLOCAL const QoreEncoding *getEncoding() const { return enc; }
+    DLLLOCAL std::string maskMessage(const char* text) const;
+
     DLLLOCAL Datasource* getDatasource() const { return ds; }
 
     DLLLOCAL QoreStringNode *get_client_version(ExceptionSink *xsink);
@@ -312,6 +314,7 @@ public:
 #endif
 
 private:
+
     context m_context;
     CS_CONNECTION* m_connection = nullptr;
     bool connected = false;

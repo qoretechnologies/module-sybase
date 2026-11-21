@@ -37,6 +37,7 @@
 #endif
 
 #include "connection.h"
+#include "TdsRedact.h"
 #if defined(FREETDS) && defined(HAVE_QORE_BULK_LOAD) && defined(HAVE_FREETDS_BULK)
 #include "bulk_load.h"
 #endif
@@ -300,8 +301,8 @@ int connection::closeAndReconnect(ExceptionSink* xsink, command& cmd, bool try_r
 
     int port = ds->getPort();
 
-    printd(5, "connection::closeAndReconnect() this: %p reconnecting to %s@%s (trans: %d, try_reconnect: %d)\n", this,
-        ds->getUsername(), ds->getDBName(), wasInTransaction(ds), try_reconnect);
+    printd(5, "connection::closeAndReconnect() this: %p reconnecting (trans: %d, try_reconnect: %d)\n", this,
+        wasInTransaction(ds), try_reconnect);
 
     // make the actual connection to the database
     if (init(ds->getUsername(), ds->getPassword() ? ds->getPassword() : "", ds->getDBName(), ds->getDBEncoding(),
@@ -311,8 +312,7 @@ int connection::closeAndReconnect(ExceptionSink* xsink, command& cmd, bool try_r
         return -1;
     }
 
-    printd(5, "connection::closeAndReconnect() this: %p auto reconnected to %s@%s m_connection: %p\n", this,
-        ds->getUsername(), ds->getDBName(), m_connection);
+    printd(5, "connection::closeAndReconnect() this: %p auto reconnected, m_connection: %p\n", this, m_connection);
 
     if (!try_reconnect || wasInTransaction(ds))
         return -1;
@@ -413,7 +413,7 @@ AbstractQoreNode *connection::exec_intern(QoreString *cmd_text, const QoreListNo
       // clear any exceptions that have been ignored
       xsink->clear();
 
-      printd(5, "connection::exec_intern() this: %p auto reconnected to %s@%s\n", this, ds->getUsername(), ds->getDBName());
+      printd(5, "connection::exec_intern() this: %p auto reconnected\n", this);
    }
 
    // to avoid warnings
@@ -598,6 +598,10 @@ int connection::rollback(ExceptionSink *xsink) {
 
 #define CHAR_ENC_SIZE 256
 
+std::string connection::maskMessage(const char* text) const {
+    return tds_mask_diagnostic(text, ds->getUsername(), ds->getPassword(), ds->getDBName());
+}
+
 // Post-constructor initialization
 int connection::init(const char* username,
                      const char* password,
@@ -608,8 +612,6 @@ int connection::init(const char* username,
                      int port,
                      ExceptionSink* xsink) {
     assert(!m_connection);
-    printd(5, "connection::init() user: %s pass: %s dbname: %s, db_enc: %s\n", username,
-        password ? password : "<n/a>", dbname, db_encoding ? db_encoding : "<n/a>");
 
     enc = n_enc;
 
@@ -671,15 +673,14 @@ int connection::init(const char* username,
 
     // set hostname and port - when both are provided, we connect directly without freetds.conf
     bool direct_connect = hostname && hostname[0] && port;
-    printd(5, "connection::init() hostname=%s port=%d direct_connect=%d dbname=%s\n",
-        hostname ? hostname : "NULL", port, direct_connect, dbname ? dbname : "NULL");
+    printd(5, "connection::init() port=%d direct_connect=%d\n", port, direct_connect);
     if (direct_connect) {
         QoreString hn(hostname);
         hn.sprintf(" %d", port);
 
         ret = ct_con_props(m_connection, CS_SET, CS_SERVERADDR, (CS_VOID*)hn.c_str(), CS_NULLTERM, 0);
         if (ret != CS_SUCCEED) {
-            xsink->raiseException("TDS-CTLIB-SET-SERVERADDR", "ct_con_props(CS_SERVERADDR, '%s') failed with error %d", hn.c_str(), ret);
+            xsink->raiseException("TDS-CTLIB-SET-SERVERADDR", "ct_con_props(CS_SERVERADDR) failed with error %d", ret);
             return -1;
         }
     }
@@ -847,7 +848,7 @@ int connection::init(const char* username,
 
         QoreString use_db("use ");
         use_db.concat(safe_dbname.c_str());
-        printd(5, "connection::init() switching to database with: %s\n", use_db.c_str());
+        printd(5, "connection::init() switching database\n");
         // Clear any pending messages before USE to avoid false errors
         discard_messages();
         if (direct_execute(use_db.c_str(), xsink)) {
@@ -950,16 +951,17 @@ int connection::purge_messages(ExceptionSink *xsink) {
         assert(ret == CS_SUCCEED);
         if (CS_SEVERITY(cmsg.msgnumber) > 10) {
             QoreStringNode *desc = new QoreStringNode;
-            desc->sprintf("client message %d, severity %d: %s", CS_NUMBER(cmsg.msgnumber), CS_SEVERITY(cmsg.msgnumber), cmsg.msgstring);
+            desc->sprintf("client message %d, severity %d: %s", CS_NUMBER(cmsg.msgnumber), CS_SEVERITY(cmsg.msgnumber), maskMessage(cmsg.msgstring).c_str());
             if (cmsg.osstringlen)
-                desc->sprintf(" (%d): '%s'", cmsg.osnumber, cmsg.osstring);
+                desc->sprintf(" (%d): '%s'", cmsg.osnumber, maskMessage(cmsg.osstring).c_str());
             xsink->raiseException("TDS-CLIENT-ERROR", desc);
             rc = -1;
         }
 #ifdef DEBUG
-        printd(1, "client: severity:%d, n:%d: %s\n", CS_SEVERITY(cmsg.msgnumber), CS_NUMBER(cmsg.msgnumber), cmsg.msgstring);
+        printd(1, "client: severity:%d, n:%d: %s\n", CS_SEVERITY(cmsg.msgnumber), CS_NUMBER(cmsg.msgnumber),
+            maskMessage(cmsg.msgstring).c_str());
         if (cmsg.osstringlen > 0)
-            printd(1, "Operating System Error: %s\n", cmsg.osstring);
+            printd(1, "Operating System Error %d: %s\n", cmsg.osnumber, maskMessage(cmsg.osstring).c_str());
 #endif
     }
     ret = ct_diag(m_connection, CS_STATUS, CS_SERVERMSG_TYPE, CS_UNUSED, &num);
@@ -973,12 +975,13 @@ int connection::purge_messages(ExceptionSink *xsink) {
             desc->sprintf("state %d, server message %d, ", smsg.state, smsg.msgnumber);
             if (smsg.line)
                 desc->sprintf("line %d, ", smsg.line);
-            desc->sprintf("severity %d: %s", smsg.severity, smsg.text);
+            desc->sprintf("severity %d: %s", smsg.severity, maskMessage(smsg.text).c_str());
             desc->trim_trailing('\n');
             xsink->raiseException("TDS-SERVER-ERROR", desc);
             rc = -1;
         }
-        printd(1, "server: line:%d, severity:%d, n:%d: %s", smsg.line, smsg.severity, smsg.msgnumber, smsg.text);
+        printd(1, "server: line:%d, severity:%d, n:%d: %s\n", smsg.line, smsg.severity, smsg.msgnumber,
+            maskMessage(smsg.text).c_str());
     }
     ret = ct_diag(m_connection, CS_CLEAR, CS_ALLMSG_TYPE, CS_UNUSED, 0);
     assert(ret == CS_SUCCEED);
@@ -1006,10 +1009,10 @@ void connection::do_check_exception(ExceptionSink *xsink, bool check, const char
 
         if (count)
             estr->concat(", ");
-        estr->sprintf("client message %d: severity %d: %s", CS_NUMBER(cmsg.msgnumber), severity, cmsg.msgstring);
+        estr->sprintf("client message %d: severity %d: %s", CS_NUMBER(cmsg.msgnumber), severity, maskMessage(cmsg.msgstring).c_str());
         estr->trim_trailing('.');
         if (cmsg.osnumber && cmsg.osstringlen > 0)
-            estr->sprintf(", OS error %d: %s", cmsg.osnumber, cmsg.osstring);
+            estr->sprintf(", OS error %d: %s", cmsg.osnumber, maskMessage(cmsg.osstring).c_str());
         count++;
     }
 
@@ -1030,13 +1033,13 @@ void connection::do_check_exception(ExceptionSink *xsink, bool check, const char
         if (count)
             estr->concat(", ");
         if (smsg.svrnlen)
-            estr->sprintf("%s: ", smsg.svrname);
+            estr->sprintf("%s: ", maskMessage(smsg.svrname).c_str());
         estr->sprintf("state %d, server message %d, ", smsg.state, smsg.msgnumber);
         if (smsg.line)
             estr->sprintf("line %d, ", smsg.line);
         estr->sprintf("severity %d", smsg.severity);
         if (smsg.textlen)
-            estr->sprintf(": %s", smsg.text);
+            estr->sprintf(": %s", maskMessage(smsg.text).c_str());
         estr->trim_trailing("\n.");
         ++count;
     }

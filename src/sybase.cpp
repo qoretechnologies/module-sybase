@@ -145,7 +145,8 @@ static int sybase_open(Datasource *ds, ExceptionSink *xsink) {
             hostname = hostname_str.c_str();
             port = atoi(colon + 1);
             if (port <= 0 || port > 65535) {
-                xsink->raiseException("TDS-CONNECT-ERROR", "invalid port number in hostname '%s'", ds->getHostName());
+                xsink->raiseException("TDS-CONNECT-ERROR", "invalid port number in hostname '%s'",
+                    sc->maskMessage(ds->getHostName()).c_str());
                 return -1;
             }
         }
@@ -159,7 +160,7 @@ static int sybase_open(Datasource *ds, ExceptionSink *xsink) {
 
     if (!port && hostname) {
         xsink->raiseException("TDS-CONNECT-ERROR", "hostname is set to '%s', but no port is set; both hostname and "
-            "port must be set to override the interfaces file", hostname);
+            "port must be set to override the interfaces file", sc->maskMessage(hostname).c_str());
         return -1;
     }
 
