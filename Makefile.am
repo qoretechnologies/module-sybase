@@ -2,7 +2,8 @@ AUTOMAKE_OPTIONS = foreign
 
 SUBDIRS = src
 
-noinst_HEADERS = src/bulk_load.h \
+noinst_HEADERS = src/TdsRedact.h \
+	src/bulk_load.h \
 	src/command.h \
 	src/common_constants.h \
 	src/connection.h \
@@ -19,7 +20,8 @@ noinst_HEADERS = src/bulk_load.h \
 	src/row_output_buffers.h \
 	src/statement.h
 
-EXTRA_DIST = COPYING.MIT COPYING.LGPL AUTHORS README \
+EXTRA_DIST = test/tds-diagnostic.cpp \
+	COPYING.MIT COPYING.LGPL AUTHORS README \
 	RELEASE-NOTES \
 	test/freetds-native-bulk-load.qtest \
 	test/sybase-statement.qtest \

@@ -515,7 +515,8 @@ void command::initiate_language_command(const char* cmd_text, ExceptionSink* xsi
    assert(cmd_text && cmd_text[0]);
    CS_RETCODE err = ct_command(m_cmd, CS_LANG_CMD, (CS_CHAR*)cmd_text, CS_NULLTERM, CS_UNUSED);
    if (err != CS_SUCCEED) {
-      m_conn.do_exception(xsink, "TDS-EXEC-ERROR", "ct_command(CS_LANG_CMD, '%s') failed with error %d", cmd_text, (int)err);
+      m_conn.do_exception(xsink, "TDS-EXEC-ERROR", "ct_command(CS_LANG_CMD, '%s') failed with error %d",
+          m_conn.maskMessage(cmd_text).c_str(), (int)err);
    }
 }
 
@@ -1370,7 +1371,7 @@ int command::get_row_description(row_result_t &result, unsigned column_count, Ex
         bool is_multi_byte = m_conn.getEncoding()->isMultiByte();
 
         printd(5, "command::get_row_description(): name: %s type: %d usertype: %d\n",
-            datafmt.name, datafmt.datatype, datafmt.usertype);
+            m_conn.maskMessage(datafmt.name).c_str(), datafmt.datatype, datafmt.usertype);
 
         datafmt.origin_datatype = datafmt.datatype;
         datafmt.origin_maxlength = datafmt.maxlength;
@@ -1425,7 +1426,8 @@ int command::get_row_description(row_result_t &result, unsigned column_count, Ex
                 break;
         }
 
-        printd(5, "command::get_row_description(): name=%s type=%d usertype=%d maxlength=%d\n", datafmt.name,
+        printd(5, "command::get_row_description(): name=%s type=%d usertype=%d maxlength=%d\n",
+            m_conn.maskMessage(datafmt.name).c_str(),
             datafmt.datatype, datafmt.usertype, datafmt.maxlength);
 
         result.push_back(datafmt);

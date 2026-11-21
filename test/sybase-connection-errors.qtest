@@ -13,6 +13,7 @@ public class ConnectionErrorTest inherits QUnit::Test {
         addTestCase("invalid port", \testInvalidPort());
         addTestCase("invalid credentials", \testInvalidCredentials());
         addTestCase("invalid database", \testInvalidDatabase());
+        addTestCase("masked connection diagnostics", \testMaskedDiagnostics());
         addTestCase("connection string parsing", \testConnectionStringParsing());
 
         set_return_value(main());
@@ -83,6 +84,30 @@ public class ConnectionErrorTest inherits QUnit::Test {
             assertTrue(True, sprintf("got error for bad database: %s", ex.err));
         }
         assertTrue(caught, "exception thrown for invalid database");
+    }
+
+    testMaskedDiagnostics() {
+        if (!ENV.QORE_DB_CONNSTR_FREETDS) {
+            testSkip("requires a configured FreeTDS test datasource");
+        }
+        hash<auto> params = parse_datasource(ENV.QORE_DB_CONNSTR_FREETDS);
+        Datasource control(params);
+        control.open();
+        control.close();
+        foreach string field in ("user", "db") {
+            hash<auto> rejected = params;
+            string value = "qore_mask_fixture_" + field;
+            rejected{field} = value;
+            *hash<ExceptionInfo> caught;
+            try {
+                Datasource ds(rejected);
+                ds.open();
+            } catch (hash<ExceptionInfo> ex) {
+                caught = ex;
+            }
+            assertTrue(exists caught, "the fixture identity is rejected");
+            assertTrue(index(caught.desc, value) < 0, "the connection field is omitted");
+        }
     }
 
     testConnectionStringParsing() {

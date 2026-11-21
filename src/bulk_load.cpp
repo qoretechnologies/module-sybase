@@ -395,7 +395,7 @@ int QoreSybaseBulkLoadState::initialize(const QoreString* table, const QoreListN
         conn.purge_messages(xsink);
         if (!*xsink) {
             xsink->raiseException("DBI:FREETDS:BULK-LOAD-ERROR",
-                "blk_init() failed for table '%s' with error %d", table->c_str(), ret);
+                "blk_init() failed for table '%s' with error %d", conn.maskMessage(table->c_str()).c_str(), ret);
         }
         cancelAndRollback(xsink, true);
         return -1;

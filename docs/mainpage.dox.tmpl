@@ -33,6 +33,11 @@ Datasource db("freetds:user/pass@dbname(utf8):host:1433");
     @endcode
 
     The driver supports transactions, bound parameters, and prepared statements.
+
+    Driver diagnostics mask whole occurrences of the connection user and database names, ignoring ASCII case.
+    The driver also masks exact passwords of eight or more characters containing a run of letters and digits
+    with at least one of each, to avoid revealing passwords that are ordinary words in standard messages.
+    Other endpoint names and native error codes remain available for troubleshooting.
     See @ref sybasecapabilitiesguide for supported features and their requirements.
 
     The driver employs efficient binary bindings for all non-text data types.
